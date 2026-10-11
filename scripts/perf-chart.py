@@ -11,12 +11,17 @@ Usage:
     python scripts/perf-chart.py --baseline 2.0.0 --candidate 2.5.0
     python scripts/perf-chart.py --baseline 2.0.0 --candidate 2.5.0 --os linux --out docs/x.png
     python scripts/perf-chart.py --baseline 2.5.0 --candidate 2.6.0 --runs 2
+    python scripts/perf-chart.py --trend --runs 2    # every recorded version, as lines
 
 For each version/OS/scenario it uses the newest row whose label is the
 scenario name (legacy runs' "-recheck" rows count as the same scenario), so a
 re-run supersedes an earlier one without deleting history. With --runs N it
 averages the newest N rows instead, for scenarios too noisy to judge from one
 run (idle private bytes can differ by ~100MB between runs of the same build).
+
+--trend instead draws every recorded version of one OS as a line per scenario, with the "real" and
+"scratch" profile histories as separate series (a version measured in both, such as 2.6.0, shows the
+offset between the two kinds), so a trend is read within a series, never across the break.
 
 Only rows from one kind of profile are compared (--profile): "scratch" rows
 come from the throwaway profiles perf-memory-scenarios.ts runs in, "real" rows
@@ -50,6 +55,16 @@ OPTIONAL_SCENARIOS = [
 ]
 METRICS = [("private_bytes_mb", "Private bytes"), ("working_set_mb", "Working set")]
 PEAK_METRICS = [("peak_private_bytes_mb", "Peak private bytes"), ("peak_working_set_mb", "Peak working set")]
+# Recorded from the CPU/startup/stall/size columns on; rows before them have these blank, so they average only
+# when every row in the set has them. (csv column, label, unit)
+SPEED_METRICS = [
+    ("cpu_percent", "CPU", "% of machine"),
+    ("work_cpu_seconds", "CPU used by the work", "CPU-seconds"),
+    ("startup_seconds", "Startup", "s"),
+    ("scan_seconds", "Scan / sync time", "s"),
+    ("stall_warnings", "Stall warnings", ""),
+    ("binary_mb", "Binary size", "MB"),
+]
 
 SURFACE = "#fcfcfb"
 INK = "#1a1a19"
@@ -79,7 +94,7 @@ def latest_rows(rows, version, os_name, profile, runs=1):
             continue
         newest = found[-runs:]
         averaged[label] = dict(newest[-1])
-        for metric, _ in METRICS + PEAK_METRICS:
+        for metric in [m for m, _ in METRICS + PEAK_METRICS] + [m for m, *_ in SPEED_METRICS]:
             values = [float(r[metric]) for r in newest if r.get(metric)]
             # Peaks are blank in rows older than #1197; average only a complete set.
             averaged[label][metric] = sum(values) / runs if len(values) == runs else None
@@ -112,6 +127,24 @@ def markdown(base, cand):
         cells = [delta(base[key][metric], cand[key][metric]) for metric, _ in metrics]
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+def speed_markdown(base, cand):
+    """Delta table for CPU, startup, scan time and binary size; empty when either version predates the columns."""
+    lines = []
+    for key, name, _ in shared_scenarios(base, cand):
+        cells = []
+        for metric, label, unit in SPEED_METRICS:
+            b, c = base[key].get(metric), cand[key].get(metric)
+            if b is None or c is None:
+                continue
+            unit_text = f" {unit}" if unit and unit != "% of machine" else ""
+            cells.append(f"{label}: {b:.1f} → {c:.1f}{unit_text}" + (" (% of machine)" if unit == "% of machine" else ""))
+        if cells:
+            lines.append(f"| {name} | " + "; ".join(cells) + " |")
+    if not lines:
+        return ""
+    return "\n".join(["| Scenario | Baseline → candidate |", "| --- | --- |"] + lines)
 
 
 def chart(base, cand, args, out):
@@ -169,20 +202,206 @@ def chart(base, cand, args, out):
     fig.savefig(out, dpi=150, facecolor=SURFACE)
 
 
+PROFILE_STYLE = {  # recessive for the pre-#1197 history, strong for the controlled runs
+    "real": dict(color=BASE_COLOR, linestyle="--", markerfacecolor=SURFACE, label="real profile (before #1197)"),
+    "scratch": dict(color=NEW_COLOR, linestyle="-", markerfacecolor=NEW_COLOR, label="scratch profile"),
+}
+
+
+def version_key(v):
+    return tuple(int(part) for part in v.split("."))
+
+
+def trend_series(rows, os_name, runs, profiles=("scratch",)):
+    """{profile: {version: scenarios}} for every version/profile with a full idle, scan and playback set."""
+    series = {}
+    for profile in profiles:
+        versions = {r["app_version"] for r in rows if r["os"] == os_name and (r.get("profile") or "real") == profile}
+        for v in sorted(versions, key=version_key):
+            have = sum(1 for r in rows if r["app_version"] == v and r["os"] == os_name
+                       and (r.get("profile") or "real") == profile and r["label"].removesuffix("-recheck") == "idle")
+            if have:
+                series.setdefault(profile, {})[v] = latest_rows(rows, v, os_name, profile, min(runs, have))
+    return series
+
+
+def trend_chart(series, args, out):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plt.rcParams.update({"font.size": 10, "text.color": INK, "axes.labelcolor": INK_2,
+                         "xtick.color": INK_2, "ytick.color": INK_2})
+    versions = sorted({v for by_version in series.values() for v in by_version}, key=version_key)
+    scenarios = [s for s in REQUIRED_SCENARIOS + OPTIONAL_SCENARIOS
+                 if any(sum(1 for rows in by_v.values() if s[0] in rows) >= 2 for by_v in series.values())]
+    fig, axes = plt.subplots(len(METRICS), len(scenarios), figsize=(3.4 * len(scenarios), 7), sharex=True,
+                             sharey="row", facecolor=SURFACE, squeeze=False)
+    for r, (metric, title) in enumerate(METRICS):
+        top = max(float(rows[k][metric]) for by_v in series.values() for rows in by_v.values()
+                  for k, *_ in scenarios if k in rows)
+        for c, (key, _, label) in enumerate(scenarios):
+            ax = axes[r][c]
+            ax.set_facecolor(SURFACE)
+            for profile, by_version in series.items():
+                points = [(versions.index(v), float(rows[key][metric])) for v, rows in by_version.items() if key in rows]
+                if not points:
+                    continue
+                style = PROFILE_STYLE[profile]
+                xs, ys = zip(*points)
+                ax.plot(xs, ys, marker="o", markersize=5.5, linewidth=1.6, color=style["color"],
+                        linestyle=style["linestyle"], markerfacecolor=style["markerfacecolor"],
+                        markeredgecolor=style["color"], label=style["label"], zorder=3)
+                for x, y in points:
+                    # Where two series share a version (2.6.0), the higher point's label goes above, the lower below.
+                    others = [float(rows[key][metric]) for pr, by_v in series.items() if pr != profile
+                              for v, rows in by_v.items() if versions.index(v) == x and key in rows]
+                    above = all(y >= o for o in others)
+                    ax.annotate(f"{y:.0f}", (x, y), textcoords="offset points", xytext=(0, 7 if above else -13),
+                                ha="center", fontsize=8, color=INK if profile == "scratch" else INK_2)
+            ax.set_xlim(-0.5, len(versions) - 0.5)
+            ax.set_ylim(0, top * 1.15)
+            ax.set_xticks(range(len(versions)), versions)
+            if r == 0:
+                ax.set_title(label.replace("\n", " "), loc="left", fontsize=11, color=INK, fontweight="bold", pad=10)
+            if c == 0:
+                ax.set_ylabel(f"{title} (MB)")
+            ax.yaxis.grid(True, color=GRID, linewidth=0.8)
+            ax.set_axisbelow(True)
+            for side in ("top", "right", "left"):
+                ax.spines[side].set_visible(False)
+            ax.spines["bottom"].set_color(GRID)
+            ax.tick_params(length=0)
+    handles, names = axes[0][0].get_legend_handles_labels()
+    for profile, style in PROFILE_STYLE.items():
+        if style["label"] not in names and profile in series:
+            handles.append(plt.Line2D([], [], color=style["color"], linestyle=style["linestyle"], marker="o",
+                                      markerfacecolor=style["markerfacecolor"]))
+            names.append(style["label"])
+    fig.legend(handles, names, loc="upper right", ncol=2, frameon=False, fontsize=9.5, bbox_to_anchor=(0.99, 0.955))
+    os_title = {"windows": "Windows", "linux": "Linux"}.get(args.os, args.os)
+    fig.suptitle(f"Luminous memory by version ({os_title}, release build)", x=0.01, ha="left", fontsize=13,
+                 fontweight="bold", color=INK, y=0.985)
+    note = ("Total across the main process and its WebView child processes. Library size and window changed over the "
+            "history; every point is a scratch-profile run unless the real-profile line is drawn (--include-real), which isn't comparable with it.")
+    if args.runs > 1:
+        note += f" Mean of the newest {args.runs} runs per version (fewer where fewer exist)."
+    fig.text(0.01, 0.012, textwrap.fill(note, 200), fontsize=8.5, color=INK_2, va="bottom")
+    fig.tight_layout(rect=(0, 0.05, 1, 0.93), h_pad=3)
+    fig.savefig(out, dpi=150, facecolor=SURFACE)
+
+
+# (scenario label, csv column, panel title, y unit); a panel is drawn only when two or more versions have it
+SPEED_PANELS = [
+    ("idle", "cpu_percent", "CPU, idle", "% of machine"),
+    ("playback-eq-analyzer", "cpu_percent", "CPU, playback (EQ + analyzer)", "% of machine"),
+    ("album-grid", "work_cpu_seconds", "CPU used scrolling the Albums grid", "CPU-seconds"),
+    ("initial-scan", "work_cpu_seconds", "CPU used by the first scan", "CPU-seconds"),
+    ("idle", "startup_seconds", "Startup (spawn to loaded page)", "seconds"),
+    ("after-full-scan", "scan_seconds", "Forced full rescan", "seconds"),
+    ("initial-scan", "scan_seconds", "First scan", "seconds"),
+    ("idle", "binary_mb", "Binary size", "MB"),
+]
+
+
+def trend_speed_chart(series, args, out):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plt.rcParams.update({"font.size": 10, "text.color": INK, "axes.labelcolor": INK_2,
+                         "xtick.color": INK_2, "ytick.color": INK_2})
+    versions = sorted({v for by_version in series.values() for v in by_version}, key=version_key)
+
+    def points(by_version, key, metric):
+        return [(versions.index(v), rows[key][metric]) for v, rows in by_version.items()
+                if key in rows and rows[key].get(metric) is not None]
+
+    panels = [p for p in SPEED_PANELS
+              if any(len(points(by_v, p[0], p[1])) >= 2 for by_v in series.values())]
+    if not panels:
+        print("No version pair has the CPU/startup/size columns yet; skipping the speed trend chart.")
+        return False
+    cols = min(4, len(panels))
+    rows_n = -(-len(panels) // cols)
+    fig, axes = plt.subplots(rows_n, cols, figsize=(3.6 * cols, 3.3 * rows_n + 1.2), sharex=True,
+                             facecolor=SURFACE, squeeze=False)
+    for ax in axes.flat[len(panels):]:
+        ax.set_visible(False)
+    for ax, (key, metric, title, unit) in zip(axes.flat, panels):
+        ax.set_facecolor(SURFACE)
+        top = 0.0
+        for profile, by_version in series.items():
+            pts = points(by_version, key, metric)
+            if not pts:
+                continue
+            style = PROFILE_STYLE[profile]
+            xs, ys = zip(*pts)
+            top = max(top, max(ys))
+            ax.plot(xs, ys, marker="o", markersize=5.5, linewidth=1.6, color=style["color"],
+                    linestyle=style["linestyle"], markerfacecolor=style["markerfacecolor"],
+                    markeredgecolor=style["color"], zorder=3)
+            for x, y in pts:
+                ax.annotate(f"{y:.2f}" if y < 1 else f"{y:.1f}" if y < 100 else f"{y:.0f}", (x, y), textcoords="offset points",
+                            xytext=(0, 7), ha="center", fontsize=8, color=INK if profile == "scratch" else INK_2)
+        ax.set_xlim(-0.5, len(versions) - 0.5)
+        ax.set_ylim(0, top * 1.2 if top else 1)
+        ax.set_xticks(range(len(versions)), versions)
+        ax.set_title(title, loc="left", fontsize=10.5, color=INK, fontweight="bold", pad=8)
+        ax.set_ylabel(unit)
+        ax.yaxis.grid(True, color=GRID, linewidth=0.8)
+        ax.set_axisbelow(True)
+        for side in ("top", "right", "left"):
+            ax.spines[side].set_visible(False)
+        ax.spines["bottom"].set_color(GRID)
+        ax.tick_params(length=0)
+    handles = [plt.Line2D([], [], color=st["color"], linestyle=st["linestyle"], marker="o",
+                          markerfacecolor=st["markerfacecolor"]) for pr, st in PROFILE_STYLE.items() if pr in series]
+    names = [st["label"] for pr, st in PROFILE_STYLE.items() if pr in series]
+    fig.legend(handles, names, loc="upper right", ncol=2, frameon=False, fontsize=9.5, bbox_to_anchor=(0.99, 0.965))
+    os_title = {"windows": "Windows", "linux": "Linux"}.get(args.os, args.os)
+    fig.suptitle(f"Luminous CPU, startup and size by version ({os_title}, release build)", x=0.01, ha="left",
+                 fontsize=13, fontweight="bold", color=INK, y=0.99)
+    note = ("CPU is the whole process tree as a share of all logical cores; a settled panel never includes the work "
+            "that preceded it. Startup is the relaunch over an existing library. Blank points were recorded before the column existed.")
+    if args.runs > 1:
+        note += f" Mean of the newest {args.runs} runs per version (fewer where fewer exist)."
+    fig.text(0.01, 0.012, textwrap.fill(note, 180), fontsize=8.5, color=INK_2, va="bottom")
+    fig.tight_layout(rect=(0, 0.06, 1, 0.93))
+    fig.savefig(out, dpi=150, facecolor=SURFACE)
+    return True
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--baseline", required=True)
-    p.add_argument("--candidate", required=True)
+    p.add_argument("--baseline")
+    p.add_argument("--candidate")
+    p.add_argument("--trend", action="store_true", help="chart every recorded version instead of comparing two")
     p.add_argument("--os", default="windows")
     p.add_argument("--csv", default=REPO_ROOT / "docs" / "performance-history.csv", type=Path)
     p.add_argument("--out", type=Path, help="default: docs/performance-<baseline>-vs-<candidate>.png")
     p.add_argument("--runs", type=int, default=1, help="average the newest N runs per version (default 1)")
+    p.add_argument("--include-real", action="store_true",
+                   help="--trend: also draw the pre-#1197 real-profile history as its own line")
     p.add_argument("--profile", default="scratch", choices=["scratch", "real"],
                    help="compare rows from throwaway profiles (default) or the real profile (history before #1197)")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")  # the delta table uses Δ/−, which cp1252 consoles can't encode
 
     rows = list(csv.DictReader(args.csv.open(encoding="utf8")))
+    if args.trend:
+        out = args.out or REPO_ROOT / "docs" / "performance-trend.png"
+        series = trend_series(rows, args.os, args.runs, ("real", "scratch") if args.include_real else ("scratch",))
+        trend_chart(series, args, out)
+        print(f"Wrote {out}")
+        speed_out = out.with_name(f"{out.stem}-speed{out.suffix}")
+        if trend_speed_chart(series, args, speed_out):
+            print(f"Wrote {speed_out}")
+        return
+    if not (args.baseline and args.candidate):
+        p.error("--baseline and --candidate are required unless --trend is given")
     base = latest_rows(rows, args.baseline, args.os, args.profile, args.runs)
     cand = latest_rows(rows, args.candidate, args.os, args.profile, args.runs)
 
@@ -190,6 +409,9 @@ def main():
     chart(base, cand, args, out)
     print(f"Wrote {out}\n")
     print(markdown(base, cand))
+    speed = speed_markdown(base, cand)
+    if speed:
+        print(f"\n{speed}")
     for name, rows_ in ((args.baseline, base), (args.candidate, cand)):
         for key, what in (("initial-scan", "first scan"), ("after-full-scan", "forced full scan"),
                           ("webdav-sync", "WebDAV sync"), ("subsonic-sync", "Subsonic sync")):

@@ -84,6 +84,7 @@ into Picard's territory; it's a different, complementary axis Picard was never m
 - Update every guide together in the same change, like locale strings.
 - It must work offline: no CDN scripts, web fonts or other remote requests. Colours come from the app's theme variables (`guide.js` mirrors them from the parent window), so don't hard-code a palette.
 - `bun run sync-docs` copies it into `static/` (generated, gitignored), along with the app's fonts from `src/lib/fonts/` into `static/fonts/` — the guide keeps no font files of its own. Preview from `static/`; opened straight from `docs/user-guide/` it falls back to the system font.
+- Screenshots: `docs/user-guide/assets/**.png` are the captures, kept as PNG for the Microsoft Store listing and the landing page. The guides reference a lossy WebP copy (`<name>.webp`, committed next to each PNG) and only those referenced copies are synced into the app, since everything synced is embedded in the exe. The capture scripts refresh the copies automatically; after replacing a PNG by hand run `bun run guide-webp` (needs ImageMagick). `scripts/guide-assets.test.ts` fails if the embedded set exceeds its size budget (#1647).
 
 ## Package Manager
 

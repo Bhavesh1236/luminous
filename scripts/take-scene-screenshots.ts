@@ -26,6 +26,7 @@ import { AppProfile } from "./throwaway-profile";
 import { createRemoteApi } from "./scenes/remote-api";
 import { scenes } from "./scenes";
 import { ALL_SCHEMES, runScenes, summarize } from "./scene-runner";
+import { encodeGuideWebp } from "./guide-assets";
 import type { ColorScheme } from "./scenes/types";
 import { LOCALES, catalogChain, type Locale } from "../src/lib/locales";
 
@@ -130,6 +131,7 @@ async function main() {
     });
 
     console.log(summarize(report));
+    encodeGuideWebp();
     if (report.failures.length) process.exitCode = 1;
   } finally {
     await profile.dispose(opts.keepProfiles);

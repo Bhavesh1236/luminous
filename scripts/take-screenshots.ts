@@ -12,6 +12,7 @@ import { DEV_SERVER_URL, startViteDevServer } from "./vite-dev-server";
 import { DEFAULT_VIEWPORT, loadSceneConfig, loadMockLibrary, resolveFeatured, resolveScreenshotSettings } from "./mock-library";
 import type { FeaturedSelection } from "./mock-library";
 import { BASE_LOCALE, LOCALES, catalogChain } from "../src/lib/locales";
+import { encodeGuideWebp } from "./guide-assets";
 
 // Minimal ANSI coloring (no chalk dependency) so warnings/errors stand out
 // against the routine progress logs when scanning a long run's output.
@@ -660,6 +661,7 @@ async function main() {
   } finally {
     await browser.close();
     killDevServer();
+    encodeGuideWebp();
     console.log("Done.");
     process.exit(0);
   }

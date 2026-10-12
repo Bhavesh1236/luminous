@@ -267,8 +267,7 @@ jobs:
           # Re-sign the unsigned `repo/` the builder step produced into the
           # shared repo, then regenerate its index/appstream/deltas.
           flatpak build-commit-from --src-repo=repo --gpg-sign="$FLATPAK_REPO_GPG_KEY_ID" "$DST" \
-            app/org.luminous.music/x86_64/master \
-            runtime/org.luminous.music.Debug/x86_64/master
+            app/org.luminous.music/x86_64/master
 
           flatpak build-update-repo --generate-static-deltas \
             --gpg-sign="$FLATPAK_REPO_GPG_KEY_ID" pages-repo/flatpak/repo

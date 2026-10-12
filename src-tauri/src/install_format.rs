@@ -168,7 +168,8 @@ pub fn detect_install_format() -> InstallFormatInfo {
 
 #[cfg(target_os = "linux")]
 fn flatpak_host_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
-    let in_sandbox = env::var("FLATPAK_ID").is_ok() || std::path::Path::new("/.flatpak-info").exists();
+    let in_sandbox =
+        env::var("FLATPAK_ID").is_ok() || std::path::Path::new("/.flatpak-info").exists();
     if in_sandbox {
         let mut cmd = std::process::Command::new("flatpak-spawn");
         cmd.arg("--host").arg(program);
@@ -242,7 +243,10 @@ pub fn detect_flatpak_source(app_id: &str) -> Option<String> {
         return None;
     }
 
-    let origin = String::from_utf8(origin_output.stdout).ok()?.trim().to_string();
+    let origin = String::from_utf8(origin_output.stdout)
+        .ok()?
+        .trim()
+        .to_string();
     if origin.is_empty() {
         return None;
     }
@@ -433,7 +437,10 @@ plain   -
         let remotes = parse_flatpak_remotes(stdout);
         assert_eq!(remotes.get("flathub").map(|s| s.as_str()), Some("Flathub"));
         assert_eq!(remotes.get("cosmic").map(|s| s.as_str()), Some("COSMIC"));
-        assert_eq!(remotes.get("esoltys").map(|s| s.as_str()), Some("esoltys.dev"));
+        assert_eq!(
+            remotes.get("esoltys").map(|s| s.as_str()),
+            Some("esoltys.dev")
+        );
         assert_eq!(
             remotes.get("fedora").map(|s| s.as_str()),
             Some("Fedora Linux Flatpaks")

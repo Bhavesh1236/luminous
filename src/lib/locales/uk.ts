@@ -368,6 +368,7 @@ export const uk = {
     updatePolicyAuto: "Встановлювати автоматично",
     updatePolicyAutoHint: "Завантажувати й застосовувати під час наступного перезапуску.",
     updateInstalledAsFooter: "Установлено як {format}",
+    updateInstalledAsFromFooter: "Установлено як {format} з {source}",
     updateAutoSupportedFooter: "підтримується автооновлення",
     updateNotifyOnlyFooter: "лише сповіщення, установлення вручну",
     updateNotifyOnlyAppImageFooter: "лише сповіщення, завантажте новий AppImage",

@@ -18,12 +18,14 @@ use std::env;
 /// external package manager (deb/rpm/snap), which would just have
 /// its files overwritten out from under it, or reverted, by a self-update,
 /// and false for AppImage, which can't be cleanly patched in place either.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct InstallFormatInfo {
     pub format: String,
     pub human_name: String,
     pub supports_self_update: bool,
     pub is_portable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[tauri::command]
@@ -44,16 +46,18 @@ pub fn detect_install_format() -> InstallFormatInfo {
 
     #[cfg(target_os = "linux")]
     {
-        if env::var("FLATPAK_ID").is_ok() {
-            // Flatpak sets this for every sandboxed process. `/app` is a
+        if let Ok(app_id) = env::var("FLATPAK_ID") {
+            // Flatpak sets FLATPAK_ID for every sandboxed process. `/app` is a
             // read-only bind mount of the app's own OSTree checkout — the
             // in-app updater can't write there even if it wanted to; updates
             // come from `flatpak update` against the shared repo instead.
+            let source = detect_flatpak_source(&app_id);
             return InstallFormatInfo {
                 format: "flatpak".to_string(),
                 human_name: "Flatpak".to_string(),
                 supports_self_update: false,
                 is_portable: false,
+                source,
             };
         }
 
@@ -68,6 +72,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                     human_name: "Linux AppImage (Portable)".to_string(),
                     supports_self_update: false,
                     is_portable: true,
+                    source: None,
                 }
             } else {
                 InstallFormatInfo {
@@ -75,6 +80,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                     human_name: "Linux AppImage".to_string(),
                     supports_self_update: false,
                     is_portable: false,
+                    source: None,
                 }
             };
         }
@@ -85,6 +91,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                 human_name: "Snap Package".to_string(),
                 supports_self_update: false,
                 is_portable: false,
+                source: None,
             };
         }
 
@@ -97,6 +104,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                         human_name: "Debian Package (.deb)".to_string(),
                         supports_self_update: false,
                         is_portable: false,
+                        source: None,
                     };
                 } else if std::path::Path::new("/etc/redhat-release").exists()
                     || std::path::Path::new("/etc/fedora-release").exists()
@@ -106,6 +114,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                         human_name: "RPM Package (.rpm)".to_string(),
                         supports_self_update: false,
                         is_portable: false,
+                        source: None,
                     };
                 }
                 return InstallFormatInfo {
@@ -113,6 +122,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                     human_name: "System Package".to_string(),
                     supports_self_update: false,
                     is_portable: false,
+                    source: None,
                 };
             }
         }
@@ -123,6 +133,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                 human_name: "Linux Executable (Portable)".to_string(),
                 supports_self_update: false,
                 is_portable: true,
+                source: None,
             }
         } else {
             InstallFormatInfo {
@@ -130,6 +141,7 @@ pub fn detect_install_format() -> InstallFormatInfo {
                 human_name: "Linux Executable".to_string(),
                 supports_self_update: false,
                 is_portable: false,
+                source: None,
             }
         }
     }
@@ -149,8 +161,104 @@ pub fn detect_install_format() -> InstallFormatInfo {
             human_name: "Desktop Application".to_string(),
             supports_self_update: false,
             is_portable,
+            source: None,
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn flatpak_host_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    let in_sandbox = env::var("FLATPAK_ID").is_ok() || std::path::Path::new("/.flatpak-info").exists();
+    if in_sandbox {
+        let mut cmd = std::process::Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(program);
+        cmd
+    } else {
+        std::process::Command::new(program)
+    }
+}
+
+/// Parses the output of `flatpak remotes --columns=name,title` into a map from
+/// remote name to remote title.
+pub fn parse_flatpak_remotes(stdout: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let mut lines = stdout.lines();
+
+    if let Some(header) = lines.next() {
+        if !header.to_lowercase().starts_with("name") {
+            if let Some((name, title)) = parse_remote_line(header) {
+                map.insert(name, title);
+            }
+        }
+    }
+
+    for line in lines {
+        if let Some((name, title)) = parse_remote_line(line) {
+            map.insert(name, title);
+        }
+    }
+
+    map
+}
+
+fn parse_remote_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.split_whitespace();
+    let name = parts.next()?.to_string();
+    let title = parts.collect::<Vec<&str>>().join(" ");
+    if title.is_empty() || title == "-" {
+        Some((name.clone(), name))
+    } else {
+        Some((name, title))
+    }
+}
+
+/// Resolves the user-facing display name for a Flatpak remote origin.
+/// If `remotes_stdout` maps `origin` to a non-empty human title (e.g. `esoltys.dev` or `Flathub`),
+/// returns that title; otherwise falls back to `origin`.
+pub fn resolve_flatpak_origin_display(origin: &str, remotes_stdout: &str) -> String {
+    let map = parse_flatpak_remotes(remotes_stdout);
+    if let Some(title) = map.get(origin) {
+        if !title.is_empty() && title != "-" {
+            return title.clone();
+        }
+    }
+    origin.to_string()
+}
+
+/// Detects the remote repository from which this Flatpak was installed.
+/// When sandboxed, calls `flatpak info -o <app_id>` on the host via `flatpak-spawn --host`.
+#[cfg(target_os = "linux")]
+pub fn detect_flatpak_source(app_id: &str) -> Option<String> {
+    let origin_output = flatpak_host_command("flatpak")
+        .args(["info", "-o", app_id])
+        .output()
+        .ok()?;
+
+    if !origin_output.status.success() {
+        return None;
+    }
+
+    let origin = String::from_utf8(origin_output.stdout).ok()?.trim().to_string();
+    if origin.is_empty() {
+        return None;
+    }
+
+    if let Ok(remotes_output) = flatpak_host_command("flatpak")
+        .args(["remotes", "--columns=name,title"])
+        .output()
+    {
+        if remotes_output.status.success() {
+            if let Ok(stdout) = String::from_utf8(remotes_output.stdout) {
+                return Some(resolve_flatpak_origin_display(&origin, &stdout));
+            }
+        }
+    }
+
+    Some(origin)
 }
 
 /// Pure classification of a Windows executable path into an install format —
@@ -176,6 +284,7 @@ fn classify_windows_install_path(exe_path_lossy: &str, is_portable: bool) -> Ins
             human_name: "Microsoft Store".to_string(),
             supports_self_update: false,
             is_portable: false,
+            source: None,
         };
     }
 
@@ -185,6 +294,7 @@ fn classify_windows_install_path(exe_path_lossy: &str, is_portable: bool) -> Ins
             human_name: "Windows Portable".to_string(),
             supports_self_update: false,
             is_portable: true,
+            source: None,
         };
     }
 
@@ -194,6 +304,7 @@ fn classify_windows_install_path(exe_path_lossy: &str, is_portable: bool) -> Ins
             human_name: "Windows Installer (.exe / .msi)".to_string(),
             supports_self_update: true,
             is_portable: false,
+            source: None,
         };
     }
 
@@ -202,6 +313,7 @@ fn classify_windows_install_path(exe_path_lossy: &str, is_portable: bool) -> Ins
         human_name: "Windows Installer (.exe / .msi)".to_string(),
         supports_self_update: true,
         is_portable: false,
+        source: None,
     }
 }
 
@@ -306,5 +418,44 @@ mod tests {
         assert_eq!(info.format, "msix");
         assert!(!info.supports_self_update);
         assert!(!info.is_portable);
+    }
+
+    #[test]
+    fn test_parse_flatpak_remotes() {
+        let stdout = "\
+Name    Title
+flathub Flathub
+cosmic  COSMIC
+esoltys esoltys.dev
+fedora  Fedora Linux Flatpaks
+plain   -
+";
+        let remotes = parse_flatpak_remotes(stdout);
+        assert_eq!(remotes.get("flathub").map(|s| s.as_str()), Some("Flathub"));
+        assert_eq!(remotes.get("cosmic").map(|s| s.as_str()), Some("COSMIC"));
+        assert_eq!(remotes.get("esoltys").map(|s| s.as_str()), Some("esoltys.dev"));
+        assert_eq!(
+            remotes.get("fedora").map(|s| s.as_str()),
+            Some("Fedora Linux Flatpaks")
+        );
+        assert_eq!(remotes.get("plain").map(|s| s.as_str()), Some("plain"));
+    }
+
+    #[test]
+    fn test_resolve_flatpak_origin_display() {
+        let stdout = "\
+Name    Title
+flathub Flathub
+esoltys esoltys.dev
+";
+        assert_eq!(
+            resolve_flatpak_origin_display("esoltys", stdout),
+            "esoltys.dev"
+        );
+        assert_eq!(resolve_flatpak_origin_display("flathub", stdout), "Flathub");
+        assert_eq!(
+            resolve_flatpak_origin_display("custom-repo", stdout),
+            "custom-repo"
+        );
     }
 }

@@ -368,6 +368,7 @@ export const ru = {
     updatePolicyAuto: "Устанавливать автоматически",
     updatePolicyAutoHint: "Скачивать и применять при следующем перезапуске.",
     updateInstalledAsFooter: "Установлено как {format}",
+    updateInstalledAsFromFooter: "Установлено как {format} из {source}",
     updateAutoSupportedFooter: "автообновление поддерживается",
     updateNotifyOnlyFooter: "только уведомление, установка вручную",
     updateNotifyOnlyAppImageFooter: "только уведомление, скачайте новый AppImage",

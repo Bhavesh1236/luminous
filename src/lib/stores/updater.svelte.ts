@@ -10,6 +10,7 @@ interface InstallFormatInfo {
   human_name: string;
   supports_self_update: boolean;
   is_portable?: boolean;
+  source?: string | null;
 }
 
 type CheckStatus = "idle" | "checking" | "available" | "up-to-date" | "error";

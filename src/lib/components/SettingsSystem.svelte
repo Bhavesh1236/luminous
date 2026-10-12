@@ -352,7 +352,11 @@
     </button>
   {:else}
     <div class="pt-3 border-t border-brand-border/50 text-xs text-brand-text-secondary">
-      {i18n.t('settings.updateInstalledAsFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name) })}
+      {#if updaterStore.installFormat.source}
+        {i18n.t('settings.updateInstalledAsFromFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name), source: updaterStore.installFormat.source })}
+      {:else}
+        {i18n.t('settings.updateInstalledAsFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name) })}
+      {/if}
     </div>
   {/if}
 </div>
@@ -496,7 +500,11 @@
 
   <div class="flex items-center justify-between gap-4 pt-3 border-t border-brand-border/50 text-xs text-brand-text-secondary">
     <span>
-      {i18n.t('settings.updateInstalledAsFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name) })}
+      {#if updaterStore.installFormat.source}
+        {i18n.t('settings.updateInstalledAsFromFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name), source: updaterStore.installFormat.source })}
+      {:else}
+        {i18n.t('settings.updateInstalledAsFooter', { format: getFormatName(updaterStore.installFormat.format, updaterStore.installFormat.human_name) })}
+      {/if}
       — {updaterStore.installFormat.supports_self_update
         ? i18n.t('settings.updateAutoSupportedFooter')
         : updaterStore.installFormat.format === 'appimage'

@@ -19,11 +19,14 @@
   );
 
   $effect(() => {
-    if (targetSection && frameElement?.contentWindow) {
+    if (!isLoading && targetSection && frameElement?.contentWindow) {
       try {
-        const frameHash = frameElement.contentWindow.location.hash.slice(1);
-        if (frameHash !== targetSection) {
-          frameElement.contentWindow.location.hash = targetSection;
+        const href = frameElement.contentWindow.location.href;
+        if (href && !href.startsWith("about:")) {
+          const frameHash = frameElement.contentWindow.location.hash.slice(1);
+          if (frameHash !== targetSection) {
+            frameElement.contentWindow.location.hash = targetSection;
+          }
         }
       } catch {
         // Cross-origin fallback (should not occur since it is bundled locally)
@@ -65,8 +68,16 @@
     title={i18n.t('sidebar.help')}
     class="flex-1 w-full h-full border-0 transition-opacity duration-150 {isLoading ? 'opacity-0' : 'opacity-100'}"
     onload={(e) => {
-      isLoading = false;
       const frame = e.currentTarget as HTMLIFrameElement;
+      try {
+        const href = frame.contentWindow?.location.href;
+        if (!href || href.startsWith("about:")) {
+          return;
+        }
+      } catch {
+        // Ignore cross-origin checks
+      }
+      isLoading = false;
       if (!targetSection) {
         frame.contentWindow?.scrollTo(0, 0);
       }

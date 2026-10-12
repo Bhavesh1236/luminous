@@ -17,6 +17,50 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Returns `true` if Luminous is executing inside a Linux Flatpak sandbox (#1668).
+/// Probed via `/.flatpak-info` presence or the standard `FLATPAK_ID` environment variable.
+#[cfg(not(windows))]
+fn is_flatpak_sandbox() -> bool {
+    Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
+}
+
+#[cfg(windows)]
+fn is_flatpak_sandbox() -> bool {
+    false
+}
+
+/// Constructs a `Command` targeting either the host environment (via `flatpak-spawn --host`
+/// when sandboxed) or running directly on the system.
+fn host_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[cfg(not(windows))]
+    {
+        if is_flatpak_sandbox() {
+            let mut cmd = Command::new("flatpak-spawn");
+            cmd.arg("--host").arg(program);
+            return cmd;
+        }
+    }
+    Command::new(program)
+}
+
+/// Checks if a file exists, taking Flatpak sandboxing into account.
+/// When sandboxed, host paths (e.g. `/var/lib/flatpak/exports/bin/...` or user custom paths)
+/// are not directly visible inside Luminous's filesystem mount, so we query `test -f` via `flatpak-spawn --host`.
+fn path_is_file(path: &Path) -> bool {
+    #[cfg(not(windows))]
+    {
+        if is_flatpak_sandbox() {
+            return host_command("test")
+                .arg("-f")
+                .arg(path)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+        }
+    }
+    path.is_file()
+}
+
 /// Locates the Picard executable: an optional caller-supplied custom path
 /// (persisted via `set_app_setting("picard_path", ...)`) takes priority,
 /// then the `PICARD_PATH` env var (dev/packaging override), then a bare
@@ -28,7 +72,7 @@ use std::process::Command;
 pub fn find_picard(custom_path: Option<&str>) -> Option<PathBuf> {
     if let Some(p) = custom_path.filter(|p| !p.trim().is_empty()) {
         let path = PathBuf::from(p);
-        if path.is_file() {
+        if path_is_file(&path) {
             return Some(path);
         }
     }
@@ -36,7 +80,7 @@ pub fn find_picard(custom_path: Option<&str>) -> Option<PathBuf> {
     if let Ok(env_path) = std::env::var("PICARD_PATH") {
         if !env_path.trim().is_empty() {
             let path = PathBuf::from(&env_path);
-            if path.is_file() {
+            if path_is_file(&path) {
                 return Some(path);
             }
         }
@@ -89,13 +133,38 @@ pub fn find_picard(custom_path: Option<&str>) -> Option<PathBuf> {
                 "{home}/.local/share/flatpak/exports/bin/org.musicbrainz.Picard"
             )));
         }
-        flatpak_candidates.into_iter().find(|p| p.is_file())
+        flatpak_candidates.into_iter().find(|p| path_is_file(p))
     }
 }
 
-/// Bare-name `PATH` lookup without shelling out — the cross-platform
-/// equivalent of `which`/`where`.
+/// Parses standard stdout from `which <name>`, returning the resolved path
+/// if it points to an absolute path that is not an error message.
+#[cfg(not(windows))]
+fn parse_which_output(stdout: &str) -> Option<PathBuf> {
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with("which: no ") && trimmed.starts_with('/') {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    None
+}
+
+/// Bare-name `PATH` lookup without shelling out on native systems, or
+/// dispatching `which` via `flatpak-spawn --host` when running in a Flatpak sandbox.
 fn which_on_path(name: &str) -> Option<PathBuf> {
+    #[cfg(not(windows))]
+    {
+        if is_flatpak_sandbox() {
+            let output = host_command("which").arg(name).output().ok()?;
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                return parse_which_output(&stdout);
+            }
+            return None;
+        }
+    }
+
     let path_var = std::env::var_os("PATH")?;
     std::env::split_paths(&path_var)
         .map(|dir| dir.join(name))
@@ -172,7 +241,7 @@ fn spawn_chunk<P: AsRef<std::ffi::OsStr>>(exe: &Path, chunk: &[P]) -> Result<()>
     // Picard would otherwise inherit our stdout/stderr, so its Qt chatter
     // ("QEventDispatcherWin32::wakeUp ...") lands in Luminous's log looking
     // like ours.
-    Command::new(exe)
+    host_command(exe)
         .args(chunk)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -245,7 +314,7 @@ fn flatpak_app_id(exe: &Path) -> Option<String> {
     if !name.contains('.') {
         return None; // Flatpak app IDs are reverse-DNS style; a bare binary name can't be one.
     }
-    let status = Command::new("flatpak")
+    let status = host_command("flatpak")
         .args(["info", name])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -261,7 +330,7 @@ fn flatpak_app_id(exe: &Path) -> Option<String> {
 /// treated as "can't tell it's blocked", so callers don't false-positive.
 #[cfg(not(windows))]
 fn flatpak_filesystem_roots(app_id: &str) -> Option<Vec<PathBuf>> {
-    let output = Command::new("flatpak")
+    let output = host_command("flatpak")
         .args(["info", "--show-permissions", app_id])
         .output()
         .ok()?;
@@ -310,7 +379,7 @@ fn parse_filesystem_grants(
 /// `xdg-user-dir`, falling back to `$HOME/<fallback>` if that's unavailable.
 #[cfg(not(windows))]
 fn xdg_user_dir(name: &str, fallback: &str, home: Option<&Path>) -> PathBuf {
-    Command::new("xdg-user-dir")
+    host_command("xdg-user-dir")
         .arg(name)
         .output()
         .ok()
@@ -443,4 +512,37 @@ mod tests {
         assert!(result.is_ok());
         assert!(start.elapsed() < LAUNCH_STAGGER);
     }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn parse_which_output_extracts_clean_binary_path() {
+        let stdout = "/var/lib/flatpak/exports/bin/org.musicbrainz.Picard\n";
+        assert_eq!(
+            parse_which_output(stdout),
+            Some(PathBuf::from("/var/lib/flatpak/exports/bin/org.musicbrainz.Picard"))
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn parse_which_output_ignores_error_lines() {
+        let stdout = "which: no picard in (/usr/bin:/bin)\n";
+        assert_eq!(parse_which_output(stdout), None);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn host_command_dispatches_expected_program() {
+        let cmd = host_command("test");
+        let program = cmd.get_program();
+        if is_flatpak_sandbox() {
+            assert_eq!(program, "flatpak-spawn");
+            let args: Vec<&std::ffi::OsStr> = cmd.get_args().collect();
+            assert_eq!(args.first().and_then(|a| a.to_str()), Some("--host"));
+            assert_eq!(args.get(1).and_then(|a| a.to_str()), Some("test"));
+        } else {
+            assert_eq!(program, "test");
+        }
+    }
 }
+

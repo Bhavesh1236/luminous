@@ -356,6 +356,7 @@ export const de = {
     updatePolicyAuto: "Automatisch installieren",
     updatePolicyAutoHint: "Herunterladen und beim nächsten Neustart anwenden.",
     updateInstalledAsFooter: "Installiert als {format}",
+    updateInstalledAsFromFooter: "Installiert als {format} von {source}",
     updateAutoSupportedFooter: "automatische Updates werden unterstützt",
     updateNotifyOnlyFooter: "nur Benachrichtigung, manuell installieren",
     updateNotifyOnlyAppImageFooter: "nur Benachrichtigung, neues AppImage herunterladen",

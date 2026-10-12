@@ -519,7 +519,9 @@ mod tests {
         let stdout = "/var/lib/flatpak/exports/bin/org.musicbrainz.Picard\n";
         assert_eq!(
             parse_which_output(stdout),
-            Some(PathBuf::from("/var/lib/flatpak/exports/bin/org.musicbrainz.Picard"))
+            Some(PathBuf::from(
+                "/var/lib/flatpak/exports/bin/org.musicbrainz.Picard"
+            ))
         );
     }
 
@@ -545,4 +547,3 @@ mod tests {
         }
     }
 }
-

@@ -4,8 +4,11 @@ import { render, fireEvent } from "@testing-library/svelte";
 import { prefs } from "../stores/prefs.svelte";
 import RightPanel from "./RightPanel.svelte";
 import { playerStore } from "../stores/player.svelte";
+import { contextStore } from "../stores/context.svelte";
 import { inspectorStore } from "../stores/inspector.svelte";
 import { navigationStore } from "../stores/navigation.svelte";
+import { picardStore } from "../stores/picard.svelte";
+import * as picardUtils from "../utils/picard";
 import { flushSync } from "svelte";
 import type { Song, AudioPipelineInfo } from "../types";
 
@@ -53,6 +56,7 @@ describe("RightPanel.svelte", () => {
     playerStore.currentSong = undefined;
     prefs.onlineEnabled = true;
     inspectorStore.clearAll();
+    contextStore.clearAll();
   });
 
   it("renders an unpin button while pinned and a pin button while unpinned", async () => {
@@ -377,5 +381,91 @@ describe("RightPanel.svelte", () => {
     inspectorStore.setSelection("album-view", mockSong);
     const idle = render(RightPanel);
     expect(idle.queryByRole("button", { name: "Now Playing" })).not.toBeInTheDocument();
+  });
+
+  it("shows actionable empty state with Edit tags, Help link, and Get Picard when Picard is not installed", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_song_context") return null;
+      return null;
+    });
+
+    picardStore.path = null;
+    playerStore.currentSong = mockSong;
+    const openHelpSpy = vi.spyOn(navigationStore, "openHelp");
+
+    const { getByText, findByText, findByRole } = render(RightPanel);
+    await fireEvent.click(getByText("Information"));
+
+    expect(await findByText("No details for this song yet")).toBeInTheDocument();
+    expect(await findByText("Luminous shows what is saved in the song's tags. Fill them in and they appear here.")).toBeInTheDocument();
+
+    const editTagsBtn = await findByRole("button", { name: "Edit tags" });
+    expect(editTagsBtn).toBeInTheDocument();
+
+    const getPicardBtn = await findByRole("button", { name: "Get MusicBrainz Picard" });
+    expect(getPicardBtn).toBeInTheDocument();
+    await fireEvent.click(getPicardBtn);
+    expect(openExternalUrlMock).toHaveBeenCalledWith("https://picard.musicbrainz.org");
+
+    const helpBtn = await findByText("Learn how to get metadata & bios");
+    expect(helpBtn).toBeInTheDocument();
+    await fireEvent.click(helpBtn);
+    expect(openHelpSpy).toHaveBeenCalledWith("metadata-enrichment");
+  });
+
+  it("shows Open folder in Picard button in empty state when Picard is available and song is local", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_song_context") return null;
+      return null;
+    });
+
+    picardStore.path = "/usr/bin/picard";
+    playerStore.currentSong = mockSong;
+    const openInPicardSpy = vi.spyOn(picardUtils, "openInPicard").mockResolvedValue();
+
+    const { getByText, findByRole, findByText } = render(RightPanel);
+    await fireEvent.click(getByText("Information"));
+
+    const picardBtn = await findByRole("button", { name: "Open folder in Picard" });
+    expect(picardBtn).toBeInTheDocument();
+
+    expect(await findByText("/music")).toBeInTheDocument();
+
+    await fireEvent.click(picardBtn);
+    expect(openInPicardSpy).toHaveBeenCalledWith([mockSong.id]);
+  });
+
+  it("opens TagEditor when clicking Edit tags in empty state", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_song_context") return null;
+      if (cmd === "get_song_details" || cmd === "get_song_tags") {
+        return {
+          title: "Test Track Title",
+          artist: "Test Artist",
+          album: "Test Album",
+          album_artist: "Test Artist",
+          composer: "",
+          genre: "Rock",
+          track: 1,
+          disc: 1,
+          year: 2024,
+          original_year: null,
+          grouping: "",
+          bpm: null,
+          initial_key: null,
+        };
+      }
+      return null;
+    });
+
+    playerStore.currentSong = mockSong;
+    const { getByText, findByRole } = render(RightPanel);
+    await fireEvent.click(getByText("Information"));
+
+    const editTagsBtn = await findByRole("button", { name: "Edit tags" });
+    await fireEvent.click(editTagsBtn);
+
+    const dialog = await findByRole("dialog");
+    expect(dialog).toBeInTheDocument();
   });
 });

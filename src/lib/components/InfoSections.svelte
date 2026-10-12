@@ -1,13 +1,27 @@
 <script lang="ts">
-  import { ArrowSquareOutIcon as ExternalLink, ArrowsClockwiseIcon as RefreshCw } from "phosphor-svelte";
+  import {
+    ArrowSquareOutIcon as ExternalLink,
+    ArrowsClockwiseIcon as RefreshCw,
+    ArrowSquareOutIcon as OpenInPicard,
+    DownloadSimpleIcon as Download,
+    FolderIcon as Folder,
+    QuestionIcon as HelpCircle,
+    TagIcon as Tag,
+  } from "phosphor-svelte";
   import { i18n } from "../stores/i18n.svelte";
+  import { navigationStore } from "../stores/navigation.svelte";
+  import { picardStore } from "../stores/picard.svelte";
   import type { ContextView } from "../stores/context.svelte";
   import { openExternalUrl } from "../utils/openExternalUrl";
+  import { getAlbumFolderPath, getParentFolder } from "../utils/pathUtils";
+  import { openInPicard } from "../utils/picard";
+  import { isRemoteSource } from "../utils/remoteSource";
   import ArtistInformationPanel from "./ArtistInformationPanel.svelte";
   import ArtistEventsSection from "./ArtistEventsSection.svelte";
   import CommunityRating from "./CommunityRating.svelte";
   import MarkdownBio from "./MarkdownBio.svelte";
   import SocialIcon from "./SocialIcon.svelte";
+  import TagEditor from "./TagEditor.svelte";
 
   interface Props {
     /** What to render; see `contextStore.for()`. */
@@ -19,6 +33,26 @@
   let { view, isEntity = false }: Props = $props();
 
   let sections = $derived(view.sections);
+  let song = $derived(view.subject?.song);
+  let canOpenPicard = $derived(song != null && !isRemoteSource(song));
+  let canEditTags = $derived(song != null);
+
+  let editingSongId = $state<number | null>(null);
+
+  let folderPath = $derived(
+    song?.path ? getAlbumFolderPath([song.path]) || getParentFolder(song.path) : ""
+  );
+
+  let displayFolderPath = $derived.by(() => {
+    if (!folderPath) return "";
+    const isWindows = folderPath.includes("\\");
+    const sep = isWindows ? "\\" : "/";
+    const segments = folderPath.split(/[\/\\]/).filter(Boolean);
+    if (segments.length > 2) {
+      return `…${sep}${segments.slice(-2).join(sep)}`;
+    }
+    return folderPath;
+  });
 </script>
 
 <!-- A container, not a viewport query: this sits in the 288px sidebar and in the wide center pane. -->
@@ -152,10 +186,82 @@
       </button>
     </div>
   {:else if sections.length === 0 && !view.offline}
-    <p class="text-brand-text-secondary/60 py-2">
-      {isEntity
-        ? i18n.t('playerBar.contextEmptyStateEntity', {}, 'No enrichment data available.')
-        : i18n.t('playerBar.contextEmptyState', {}, 'No enrichment data available for this track.')}
-    </p>
+    <div class="space-y-3.5 py-1">
+      <div class="space-y-1">
+        <h3 class="text-sm font-semibold text-brand-text-primary">
+          {isEntity
+            ? i18n.t('playerBar.contextEmptyTitleEntity', {}, 'No details found yet')
+            : i18n.t('playerBar.contextEmptyTitle', {}, 'No details for this song yet')}
+        </h3>
+        <p class="text-xs text-brand-text-secondary/80 leading-relaxed">
+          {i18n.t('playerBar.contextEmptyDesc', {}, "Luminous shows what is saved in the song's tags. Fill them in and they appear here.")}
+        </p>
+      </div>
+
+      <div class="space-y-2">
+        <div class="flex flex-col @sm:flex-row gap-2">
+          {#if canEditTags && song}
+            <button
+              type="button"
+              onclick={() => { editingSongId = song.id; }}
+              class="w-full @sm:flex-1 max-w-xs flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-brand-accent text-brand-accent-contrast font-medium text-xs hover:opacity-95 active:opacity-90 transition-opacity cursor-pointer shadow-sm"
+            >
+              <Tag class="w-4 h-4 shrink-0" />
+              <span>{i18n.t('playerBar.contextEditTags', {}, 'Edit tags')}</span>
+            </button>
+          {/if}
+
+          {#if picardStore.available && canOpenPicard && song}
+            <button
+              type="button"
+              onclick={() => openInPicard([song.id])}
+              class="w-full @sm:flex-1 max-w-xs flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-brand-sidebar/40 hover:bg-brand-sidebar/70 text-brand-text-primary border border-brand-border/60 font-medium text-xs transition-colors cursor-pointer"
+            >
+              <OpenInPicard class="w-4 h-4 shrink-0" />
+              <span>{i18n.t('playerBar.contextOpenFolderInPicard', {}, 'Open folder in Picard')}</span>
+            </button>
+          {:else if !picardStore.available}
+            <button
+              type="button"
+              onclick={() => openExternalUrl("https://picard.musicbrainz.org")}
+              class="w-full @sm:flex-1 max-w-xs flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-brand-sidebar/40 hover:bg-brand-sidebar/70 text-brand-text-primary border border-brand-border/60 font-medium text-xs transition-colors cursor-pointer"
+            >
+              <Download class="w-4 h-4 shrink-0" />
+              <span>{i18n.t('playerBar.contextGetPicard', {}, 'Get MusicBrainz Picard')}</span>
+            </button>
+          {/if}
+        </div>
+
+        {#if picardStore.available && canOpenPicard && song && displayFolderPath}
+          <div class="flex items-center gap-1.5 text-xs text-brand-text-secondary/70 min-w-0" title={folderPath}>
+            <Folder class="w-3.5 h-3.5 shrink-0" />
+            <span class="truncate">{displayFolderPath}</span>
+          </div>
+        {:else if !picardStore.available}
+          <p class="text-xs text-brand-text-secondary/70 leading-relaxed">
+            {i18n.t('playerBar.contextPicardNotInstalled', {}, 'Picard is not installed or could not be found. It is free, and it fills in tags from the MusicBrainz database.')}
+          </p>
+        {:else if picardStore.available && !canOpenPicard}
+          <p class="text-xs text-brand-text-secondary/70 leading-relaxed">
+            {i18n.t('picard.remoteNotSupportedTooltip')}
+          </p>
+        {/if}
+      </div>
+
+      <div class="pt-1">
+        <button
+          type="button"
+          onclick={() => navigationStore.openHelp("metadata-enrichment")}
+          class="inline-flex items-center gap-1.5 text-xs text-brand-accent hover:underline cursor-pointer font-medium text-left"
+        >
+          <HelpCircle class="w-4 h-4 shrink-0" />
+          <span>{i18n.t('playerBar.contextLearnEnrichment', {}, 'Learn how to get metadata & bios')}</span>
+        </button>
+      </div>
+    </div>
   {/if}
 </div>
+
+{#if editingSongId !== null}
+  <TagEditor songId={editingSongId} onClose={() => { editingSongId = null; }} />
+{/if}

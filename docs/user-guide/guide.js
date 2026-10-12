@@ -99,8 +99,11 @@
   // ── Sections ──
 
   function sectionFor(id) {
-    const el = id && document.getElementById(id);
-    return el && el.hasAttribute("data-section") ? el : null;
+    if (!id) return null;
+    const el = document.getElementById(id);
+    if (!el) return null;
+    if (el.hasAttribute("data-section")) return el;
+    return el.closest("[data-section]");
   }
 
   function show(id, scroll) {
@@ -111,13 +114,25 @@
       else a.removeAttribute("aria-current");
     }
     try { localStorage.setItem(STORAGE_KEY, target.id); } catch { /* storage unavailable */ }
-    if (scroll) window.scrollTo(0, 0);
+    if (scroll) {
+      const subTarget = id && id !== target.id ? document.getElementById(id) : null;
+      if (subTarget) {
+        // Account for sticky topbar height (typically ~61px-65px)
+        const topbar = document.querySelector(".topbar");
+        const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 65;
+        const targetTop = subTarget.getBoundingClientRect().top + window.scrollY - topbarHeight - 16;
+        window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+      } else {
+        window.scrollTo(0, 0);
+      }
+    }
   }
 
   function initSections() {
     let saved = null;
     try { saved = localStorage.getItem(STORAGE_KEY); } catch { /* storage unavailable */ }
-    show(location.hash.slice(1) || saved, false);
+    const initialId = location.hash.slice(1);
+    show(initialId || saved, !!initialId);
 
     // Replace rather than push the hash: in the app the guide shares history with
     // the Help view, and mouse back/forward buttons should navigate the app.
@@ -234,10 +249,16 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function start() {
     initSections();
     initLightbox();
     watchParentTheme();
     syncScreenshots();
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();

@@ -109,6 +109,15 @@ class NavigationStore {
     }
   }
 
+  private _helpSection = $state<string | null>(null);
+  get helpSection() { return this._helpSection; }
+  set helpSection(val: string | null) { this._helpSection = val; }
+
+  openHelp(section?: string) {
+    this._helpSection = section ?? null;
+    this.activeTab = "help";
+  }
+
   openSettings(tab: SettingsTab = "general") {
     this.settingsSubTab = tab;
     this.activeTab = "settings";

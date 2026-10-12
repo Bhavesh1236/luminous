@@ -6,6 +6,7 @@ resolver = "2"
 codegen-units = 1
 opt-level = "s"   # optimize for size in release builds
 lto = true
+strip = true
 
 [profile.dev]
 opt-level = 0

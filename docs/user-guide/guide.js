@@ -56,7 +56,7 @@
   }
 
   // ── Screenshots: show the light or dark capture matching the guide's scheme ──
-  // The markup points at the dark capture (assets/{locale}/screenshots/dark/x.png); swap the
+  // The markup points at the dark capture (assets/{locale}/screenshots/dark/x.webp); swap the
   // folder to follow the app theme when embedded, else the OS preference.
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
   function syncScreenshots() {

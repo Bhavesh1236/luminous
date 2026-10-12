@@ -30,6 +30,54 @@ describe("CollectionStore - sidebar/right-panel layout and responsive breakpoint
     });
   });
 
+  describe("info sidebar pinning", () => {
+    beforeEach(() => {
+      localStorage.clear();
+      windowLayoutStore.setRightPanelPinned(true);
+    });
+
+    it("toggleRightPanel hides a docked sidebar to the rail, without an overlay", () => {
+      windowLayoutStore.toggleRightPanel();
+      expect(windowLayoutStore.rightPanelPinned).toBe(false);
+      expect(windowLayoutStore.rightPanelPeeking).toBe(false);
+      expect(windowLayoutStore.rightPanelVisible).toBe(false);
+    });
+
+    it("toggleRightPanel docks the sidebar from the rail or an overlay", () => {
+      windowLayoutStore.setRightPanelPinned(false);
+      windowLayoutStore.setRightPanelPeeking(false);
+      windowLayoutStore.toggleRightPanel();
+      expect(windowLayoutStore.rightPanelPinned).toBe(true);
+
+      windowLayoutStore.setRightPanelPinned(false);
+      expect(windowLayoutStore.rightPanelPeeking).toBe(true);
+      windowLayoutStore.toggleRightPanel();
+      expect(windowLayoutStore.rightPanelPinned).toBe(true);
+      expect(windowLayoutStore.rightPanelPeeking).toBe(false);
+    });
+
+    it("unpinning keeps the sidebar up as an overlay", () => {
+      windowLayoutStore.setRightPanelPinned(false);
+      expect(windowLayoutStore.rightPanelPeeking).toBe(true);
+      expect(windowLayoutStore.rightPanelVisible).toBe(true);
+    });
+
+    it("treats the legacy rightPanelOpen name as docked", () => {
+      windowLayoutStore.rightPanelOpen = false;
+      expect(windowLayoutStore.rightPanelPinned).toBe(false);
+      expect(windowLayoutStore.rightPanelPeeking).toBe(false);
+      windowLayoutStore.rightPanelOpen = true;
+      expect(windowLayoutStore.rightPanelPinned).toBe(true);
+    });
+
+    it("persists the pinned state", () => {
+      windowLayoutStore.setRightPanelPinned(false);
+      expect(localStorage.getItem("layout_rightPanelPinned")).toBe("false");
+      windowLayoutStore.setRightPanelPinned(true);
+      expect(localStorage.getItem("layout_rightPanelPinned")).toBe("true");
+    });
+  });
+
   it("toggles and persists layout states (sidebar, right panel, immersive mode)", () => {
     windowLayoutStore.sidebarOpen = false;
     windowLayoutStore.setSidebarWidth(300);
@@ -39,9 +87,9 @@ describe("CollectionStore - sidebar/right-panel layout and responsive breakpoint
     windowLayoutStore.toggleSidebarCompact();
     expect(windowLayoutStore.sidebarWidth).toBe(300);
 
-    const initialRight = windowLayoutStore.rightPanelOpen;
+    const initialRight = windowLayoutStore.rightPanelVisible;
     windowLayoutStore.toggleRightPanel();
-    expect(windowLayoutStore.rightPanelOpen).toBe(!initialRight);
+    expect(windowLayoutStore.rightPanelVisible).toBe(!initialRight);
 
     windowLayoutStore.setRightPanelWidth(320);
     expect(windowLayoutStore.rightPanelWidth).toBe(320);

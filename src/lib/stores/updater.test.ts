@@ -351,5 +351,27 @@ describe("UpdaterStore", () => {
       expect(updaterStore.installFormat.supports_self_update).toBe(false);
       expect(updaterStore.isExternallyManaged).toBe(false);
     });
+
+    it("stores and preserves install source for Flatpak", async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      vi.mocked(invoke).mockImplementation((cmd: string) => {
+        if (cmd === "get_install_format") {
+          return Promise.resolve({
+            format: "flatpak",
+            human_name: "Flatpak",
+            supports_self_update: false,
+            source: "esoltys.dev",
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      await updaterStore.init();
+      await Promise.resolve();
+
+      expect(updaterStore.installFormat.format).toBe("flatpak");
+      expect(updaterStore.installFormat.source).toBe("esoltys.dev");
+      expect(updaterStore.isExternallyManaged).toBe(true);
+    });
   });
 });

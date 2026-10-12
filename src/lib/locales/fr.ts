@@ -362,6 +362,7 @@ export const fr: DeepStringRecord<typeof en> = {
     updatePolicyAuto: "Installer automatiquement",
     updatePolicyAutoHint: "Télécharger et appliquer au prochain redémarrage.",
     updateInstalledAsFooter: "Installé en tant que {format}",
+    updateInstalledAsFromFooter: "Installé en tant que {format} depuis {source}",
     updateAutoSupportedFooter: "mise à jour automatique prise en charge",
     updateNotifyOnlyFooter: "notification uniquement, installation manuelle",
     updateNotifyOnlyAppImageFooter: "notification uniquement, téléchargez la nouvelle AppImage",

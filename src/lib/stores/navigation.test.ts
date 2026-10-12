@@ -201,3 +201,21 @@ describe("navigationStore - settings sub-tab restore", () => {
     expect(navigationStore.settingsSubTab).toBe("themes");
   });
 });
+
+describe("navigationStore - help view navigation", () => {
+  beforeEach(() => {
+    navigationStore.activeTab = "collection";
+    navigationStore.helpSection = null;
+  });
+
+  it("navigates to help tab with optional section anchor", () => {
+    navigationStore.openHelp("metadata-enrichment");
+    expect(navigationStore.activeTab).toBe("help");
+    expect(navigationStore.helpSection).toBe("metadata-enrichment");
+
+    navigationStore.openHelp();
+    expect(navigationStore.activeTab).toBe("help");
+    expect(navigationStore.helpSection).toBeNull();
+  });
+});
+

@@ -1124,6 +1124,7 @@ export const ru = {
     contextReadLess: "Свернуть",
     contextEmptyState: "Для этой композиции нет дополнительных данных.",
     contextEmptyStateEntity: "Нет дополнительных данных.",
+    contextLearnEnrichment: "Узнать, как получить метаданные и биографии",
     contextRetry: "Повторить",
     contextLoading: "Загрузка контекста…",
     contextFetchError: "Не удалось загрузить контекст. Проверьте подключение и повторите попытку.",

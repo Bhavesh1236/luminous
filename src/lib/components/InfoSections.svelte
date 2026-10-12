@@ -1,8 +1,17 @@
 <script lang="ts">
-  import { ArrowSquareOutIcon as ExternalLink, ArrowsClockwiseIcon as RefreshCw } from "phosphor-svelte";
+  import {
+    ArrowSquareOutIcon as ExternalLink,
+    ArrowsClockwiseIcon as RefreshCw,
+    ArrowSquareOutIcon as OpenInPicard,
+    QuestionIcon as HelpCircle,
+  } from "phosphor-svelte";
   import { i18n } from "../stores/i18n.svelte";
+  import { navigationStore } from "../stores/navigation.svelte";
+  import { picardStore } from "../stores/picard.svelte";
   import type { ContextView } from "../stores/context.svelte";
   import { openExternalUrl } from "../utils/openExternalUrl";
+  import { openInPicard } from "../utils/picard";
+  import { isRemoteSource } from "../utils/remoteSource";
   import ArtistInformationPanel from "./ArtistInformationPanel.svelte";
   import ArtistEventsSection from "./ArtistEventsSection.svelte";
   import CommunityRating from "./CommunityRating.svelte";
@@ -19,6 +28,8 @@
   let { view, isEntity = false }: Props = $props();
 
   let sections = $derived(view.sections);
+  let song = $derived(view.subject?.song);
+  let canOpenPicard = $derived(song != null && !isRemoteSource(song));
 </script>
 
 <!-- A container, not a viewport query: this sits in the 288px sidebar and in the wide center pane. -->
@@ -152,10 +163,33 @@
       </button>
     </div>
   {:else if sections.length === 0 && !view.offline}
-    <p class="text-brand-text-secondary/60 py-2">
-      {isEntity
-        ? i18n.t('playerBar.contextEmptyStateEntity', {}, 'No enrichment data available.')
-        : i18n.t('playerBar.contextEmptyState', {}, 'No enrichment data available for this track.')}
-    </p>
+    <div class="space-y-3 py-2">
+      <p class="text-brand-text-secondary/80 leading-relaxed">
+        {isEntity
+          ? i18n.t('playerBar.contextEmptyStateEntity', {}, 'No enrichment data available.')
+          : i18n.t('playerBar.contextEmptyState', {}, 'No enrichment data available for this track.')}
+      </p>
+      <div class="flex flex-col items-start gap-2 pt-1">
+        <button
+          type="button"
+          onclick={() => navigationStore.openHelp("metadata-enrichment")}
+          class="inline-flex items-center gap-1.5 text-brand-accent hover:underline cursor-pointer font-medium text-left"
+        >
+          <HelpCircle class="w-3.5 h-3.5 shrink-0" />
+          <span>{i18n.t('playerBar.contextLearnEnrichment', {}, 'Learn how to get metadata & bios')}</span>
+        </button>
+
+        {#if picardStore.available && canOpenPicard && song}
+          <button
+            type="button"
+            onclick={() => openInPicard([song.id])}
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-brand-surface/60 hover:bg-brand-surface text-brand-text-primary border border-brand-border/40 hover:border-brand-border transition-colors cursor-pointer text-xs"
+          >
+            <OpenInPicard class="w-3.5 h-3.5 shrink-0 text-brand-text-secondary" />
+            <span>{i18n.t('picard.openInPicard', {}, 'Open in Picard')}</span>
+          </button>
+        {/if}
+      </div>
+    </div>
   {/if}
 </div>

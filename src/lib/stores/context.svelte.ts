@@ -219,6 +219,11 @@ export class ContextView {
     return subject.kind === "artist" || (subject.kind === "song" && !!this.options.songEvents?.());
   }
 
+  /** The current subject evaluated by getSubject(). */
+  get subject(): ContextSubject | null {
+    return this.getSubject();
+  }
+
   /** The raw fetched enrichment, for consumers that show fields the sections don't (e.g. MusicBrainz tags). */
   get context(): SongContextEnrichment | null {
     return this.entry?.context ?? null;

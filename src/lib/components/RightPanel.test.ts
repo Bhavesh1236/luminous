@@ -4,8 +4,11 @@ import { render, fireEvent } from "@testing-library/svelte";
 import { prefs } from "../stores/prefs.svelte";
 import RightPanel from "./RightPanel.svelte";
 import { playerStore } from "../stores/player.svelte";
+import { contextStore } from "../stores/context.svelte";
 import { inspectorStore } from "../stores/inspector.svelte";
 import { navigationStore } from "../stores/navigation.svelte";
+import { picardStore } from "../stores/picard.svelte";
+import * as picardUtils from "../utils/picard";
 import { flushSync } from "svelte";
 import type { Song, AudioPipelineInfo } from "../types";
 
@@ -53,6 +56,7 @@ describe("RightPanel.svelte", () => {
     playerStore.currentSong = undefined;
     prefs.onlineEnabled = true;
     inspectorStore.clearAll();
+    contextStore.clearAll();
   });
 
   it("renders an unpin button while pinned and a pin button while unpinned", async () => {
@@ -377,5 +381,44 @@ describe("RightPanel.svelte", () => {
     inspectorStore.setSelection("album-view", mockSong);
     const idle = render(RightPanel);
     expect(idle.queryByRole("button", { name: "Now Playing" })).not.toBeInTheDocument();
+  });
+
+  it("shows actionable empty state with link to Help guide and opens it on click", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_song_context") return null;
+      return null;
+    });
+
+    playerStore.currentSong = mockSong;
+    const openHelpSpy = vi.spyOn(navigationStore, "openHelp");
+
+    const { getByText, findByText } = render(RightPanel);
+    await fireEvent.click(getByText("Information"));
+
+    const helpBtn = await findByText("Learn how to get metadata & bios");
+    expect(helpBtn).toBeInTheDocument();
+
+    await fireEvent.click(helpBtn);
+    expect(openHelpSpy).toHaveBeenCalledWith("metadata-enrichment");
+  });
+
+  it("shows Open in Picard button in empty state when Picard is available and song is local", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd) => {
+      if (cmd === "get_song_context") return null;
+      return null;
+    });
+
+    picardStore.path = "/usr/bin/picard";
+    playerStore.currentSong = mockSong;
+    const openInPicardSpy = vi.spyOn(picardUtils, "openInPicard").mockResolvedValue();
+
+    const { getByText, findByRole } = render(RightPanel);
+    await fireEvent.click(getByText("Information"));
+
+    const picardBtn = await findByRole("button", { name: "Open in Picard" });
+    expect(picardBtn).toBeInTheDocument();
+
+    await fireEvent.click(picardBtn);
+    expect(openInPicardSpy).toHaveBeenCalledWith([mockSong.id]);
   });
 });

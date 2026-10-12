@@ -6,7 +6,30 @@
   import Button from "./Button.svelte";
   import { openExternalUrl } from "../utils/openExternalUrl";
 
+  import { navigationStore } from "../stores/navigation.svelte";
+
   let isLoading = $state(true);
+  let frameElement = $state<HTMLIFrameElement | null>(null);
+
+  let targetSection = $derived(navigationStore.helpSection);
+  let iframeSrc = $derived(
+    targetSection
+      ? `/luminous-user-guide-${i18n.manualLanguage}.html#${targetSection}`
+      : `/luminous-user-guide-${i18n.manualLanguage}.html`
+  );
+
+  $effect(() => {
+    if (targetSection && frameElement?.contentWindow) {
+      try {
+        const frameHash = frameElement.contentWindow.location.hash.slice(1);
+        if (frameHash !== targetSection) {
+          frameElement.contentWindow.location.hash = targetSection;
+        }
+      } catch {
+        // Cross-origin fallback (should not occur since it is bundled locally)
+      }
+    }
+  });
 
   /**
    * Open the guide's web links in the system browser. Inside the iframe a
@@ -37,13 +60,16 @@
     </Button>
   </div>
   <iframe
-    src="/luminous-user-guide-{i18n.manualLanguage}.html"
+    bind:this={frameElement}
+    src={iframeSrc}
     title={i18n.t('sidebar.help')}
     class="flex-1 w-full h-full border-0 transition-opacity duration-150 {isLoading ? 'opacity-0' : 'opacity-100'}"
     onload={(e) => {
       isLoading = false;
       const frame = e.currentTarget as HTMLIFrameElement;
-      frame.contentWindow?.scrollTo(0, 0);
+      if (!targetSection) {
+        frame.contentWindow?.scrollTo(0, 0);
+      }
       if (frame.contentDocument) openWebLinksExternally(frame.contentDocument);
     }}
   ></iframe>

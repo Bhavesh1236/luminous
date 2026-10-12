@@ -1070,6 +1070,7 @@ export const es = {
     contextReadLess: "Leer menos",
     contextEmptyState: "No hay datos de enriquecimiento disponibles para esta pista.",
     contextEmptyStateEntity: "No hay datos de enriquecimiento disponibles.",
+    contextLearnEnrichment: "Aprende a obtener metadatos y biografías",
     contextRetry: "Reintentar",
     contextLoading: "Obteniendo contexto…",
     contextFetchError: "No se pudieron obtener los datos de contexto. Revisa tu conexión e inténtalo de nuevo.",

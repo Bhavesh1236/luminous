@@ -1124,6 +1124,7 @@ export const uk = {
     contextReadLess: "Згорнути",
     contextEmptyState: "Для цієї композиції немає додаткових даних.",
     contextEmptyStateEntity: "Немає додаткових даних.",
+    contextLearnEnrichment: "Дізнатися, як отримати метадані та біографії",
     contextRetry: "Повторити",
     contextLoading: "Отримання контексту…",
     contextFetchError: "Не вдалося отримати контекстні дані. Перевірте з’єднання й повторіть спробу.",

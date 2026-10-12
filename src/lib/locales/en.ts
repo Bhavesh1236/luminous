@@ -1070,6 +1070,7 @@ export const en = {
     contextReadLess: "Read less",
     contextEmptyState: "No enrichment data available for this track.",
     contextEmptyStateEntity: "No enrichment data available.",
+    contextLearnEnrichment: "Learn how to get metadata & bios",
     contextRetry: "Retry",
     contextLoading: "Fetching context…",
     contextFetchError: "Couldn't fetch context data. Check your connection and retry.",

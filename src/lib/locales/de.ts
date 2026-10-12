@@ -1070,6 +1070,7 @@ export const de = {
     contextReadLess: "Weniger lesen",
     contextEmptyState: "Für diesen Titel sind keine Zusatzinformationen verfügbar.",
     contextEmptyStateEntity: "Keine Zusatzinformationen verfügbar.",
+    contextLearnEnrichment: "Erfahren, wie Metadaten und Biografien ergänzt werden",
     contextRetry: "Erneut versuchen",
     contextLoading: "Kontext wird abgerufen …",
     contextFetchError: "Die Kontextdaten konnten nicht abgerufen werden. Verbindung prüfen und erneut versuchen.",

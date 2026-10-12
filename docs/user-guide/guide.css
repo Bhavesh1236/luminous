@@ -260,6 +260,10 @@
 
 *, ::before, ::after { box-sizing: border-box; }
 
+html {
+  scroll-padding-top: 80px;
+}
+
 body {
   margin: 0;
   background: var(--bg-main);

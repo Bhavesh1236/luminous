@@ -117,7 +117,11 @@
     if (scroll) {
       const subTarget = id && id !== target.id ? document.getElementById(id) : null;
       if (subTarget) {
-        subTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Account for sticky topbar height (typically ~61px-65px)
+        const topbar = document.querySelector(".topbar");
+        const topbarHeight = topbar ? topbar.getBoundingClientRect().height : 65;
+        const targetTop = subTarget.getBoundingClientRect().top + window.scrollY - topbarHeight - 16;
+        window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
       } else {
         window.scrollTo(0, 0);
       }
@@ -245,10 +249,16 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function start() {
     initSections();
     initLightbox();
     watchParentTheme();
     syncScreenshots();
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
 })();

@@ -166,8 +166,8 @@
     <div class="space-y-3 py-2">
       <p class="text-brand-text-secondary/80 leading-relaxed">
         {isEntity
-          ? i18n.t('playerBar.contextEmptyStateEntity', {}, 'No enrichment data available.')
-          : i18n.t('playerBar.contextEmptyState', {}, 'No enrichment data available for this track.')}
+          ? i18n.t('playerBar.contextEmptyStateEntity', {}, 'No details or bios found yet.')
+          : i18n.t('playerBar.contextEmptyState', {}, 'No details or bios found for this song yet.')}
       </p>
       <div class="flex flex-col items-start gap-2 pt-1">
         <button

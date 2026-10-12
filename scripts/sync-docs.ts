@@ -4,25 +4,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { referencedAssets } from "./guide-assets";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const userGuideDir = path.join(rootDir, "docs", "user-guide");
 const staticDir = path.join(rootDir, "static");
-
-function copyDir(src: string, dest: string) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDir(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
 
 // The guide reuses the app's own fonts rather than keeping a copy in docs/user-guide/.
 const FONT_DIRS = ["expose", "fira-sans"];
@@ -47,6 +35,20 @@ for (const dir of FONT_DIRS) {
   }
 }
 
-copyDir(path.join(userGuideDir, "assets"), path.join(staticDir, "assets"));
+// Only what the guides display ships: the WebP copies they reference, never the PNG captures
+// (those are kept for the Store and website; see guide-assets.ts). Start from an empty folder so
+// files left over from an older layout don't get embedded.
+const assetsOut = path.join(staticDir, "assets");
+fs.rmSync(assetsOut, { recursive: true, force: true });
+for (const ref of referencedAssets(userGuideDir)) {
+  const src = path.join(userGuideDir, ref);
+  if (!fs.existsSync(src)) {
+    console.warn(`[sync-docs] Missing ${ref}; run \`bun run guide-webp\` to encode it.`);
+    continue;
+  }
+  const dest = path.join(staticDir, ref);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+}
 
 console.log("[sync-docs] Synced user guides and assets into static/");

@@ -64,6 +64,18 @@ export function getDaypartMixLabel(dynamicSpec: string | undefined | null, fallb
   return key ? i18n.t(`playlists.${key}`) : fallbackName;
 }
 
+/**
+ * What a Moment Mix was built from, ready to show: the genre grouping the backend picked, or
+ * "Explore Your Library" when it fell back to a random fill (empty name in the spec). Returns
+ * `null` for a spec that isn't a Moment Mix. The name is everything after the third colon, so a
+ * genre containing ":" stays whole.
+ */
+export function getDaypartMixSourceLabel(dynamicSpec: string | undefined | null): string | null {
+  if (!dynamicSpec?.startsWith("daypart:")) return null;
+  const genre = dynamicSpec.split(":").slice(3).join(":").trim();
+  return genre || i18n.t("home.exploreLibrary");
+}
+
 export function getPlaylistDisplayName(
   playlist: Playlist | { name: string; is_queue?: boolean; population_mode?: QueuePopulationMode; dynamic_enabled?: boolean; dynamic_spec?: string } | undefined | null
 ): string {

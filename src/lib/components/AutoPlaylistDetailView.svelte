@@ -49,7 +49,7 @@
   import type { PlaylistItem, QueuePopulationMode, Song } from "../types";
   import { i18n } from "../stores/i18n.svelte";
   import { toastStore } from "../stores/toast.svelte";
-  import { getPopulationModeSuffix, getBpmBucketLabel, getDaypartMixLabel } from "../utils/playlist";
+  import { getPopulationModeSuffix, getBpmBucketLabel, getDaypartMixLabel, getDaypartMixSourceLabel } from "../utils/playlist";
   import { genreColorHsl, resolveGenreColorIndex } from "../utils/genrePalette";
   import { rememberScroll } from "../utils/scrollMemory";
   import { openInPicard } from "../utils/picard";
@@ -190,6 +190,13 @@
     const suffix = getPopulationModeSuffix(populationMode);
     return suffix ? i18n.t("playlists.populationModeTitleFormat", { base, suffix }) : base;
   });
+
+  // Moment Mix only: the genre (or "Explore Your Library" random fill) the mix was built from.
+  let daypartSourceLabel = $derived(
+    kind === "daypart"
+      ? getDaypartMixSourceLabel(playlistsStore.playlists.find((p) => p.id === playlistId)?.dynamic_spec)
+      : null
+  );
 
   let topCovers = $derived(
     kind === "missing_metadata"
@@ -626,6 +633,10 @@
         </h1>
 
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-brand-text-primary font-medium">
+          {#if daypartSourceLabel}
+            <span>{daypartSourceLabel}</span>
+            <span>•</span>
+          {/if}
           <span>{i18n.plural("playlists.songsCount", songs.length)}</span>
           <span>•</span>
           <span>{totalDurationLabel}</span>

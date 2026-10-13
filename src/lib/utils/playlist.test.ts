@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoContinueRunStarts, getDaypartMixLabel, getPlaylistDisplayName, getPopulationModeSuffix, isAutoContinueItem } from "./playlist";
+import { autoContinueRunStarts, getDaypartMixLabel, getDaypartMixSourceLabel, getPlaylistDisplayName, getPopulationModeSuffix, isAutoContinueItem } from "./playlist";
 import type { Playlist, PlaylistItem } from "../types";
 import { i18n } from "../stores/i18n.svelte";
 
@@ -208,6 +208,22 @@ describe("Moment Mix label", () => {
     expect(getDaypartMixLabel("daypart:brunch:2026-10-05:", "Brunch Mix")).toBe("Brunch Mix");
     expect(getDaypartMixLabel("tag:Jazz", "Jazz")).toBe("Jazz");
     expect(getDaypartMixLabel(null, "X")).toBe("X");
+  });
+});
+
+describe("getDaypartMixSourceLabel", () => {
+  it("returns the picked genre grouping, keeping a colon in its name", () => {
+    expect(getDaypartMixSourceLabel("daypart:latenight:2026-10-12:Folk Metal")).toBe("Folk Metal");
+    expect(getDaypartMixSourceLabel("daypart:morning:2026-10-12:Pop: Indie")).toBe("Pop: Indie");
+  });
+
+  it("shows Explore Your Library for the random-fill marker", () => {
+    expect(getDaypartMixSourceLabel("daypart:latenight:2026-10-12:")).toBe(i18n.t("home.exploreLibrary"));
+  });
+
+  it("returns null for a non-daypart or missing spec", () => {
+    expect(getDaypartMixSourceLabel("tag:Jazz")).toBeNull();
+    expect(getDaypartMixSourceLabel(null)).toBeNull();
   });
 });
 

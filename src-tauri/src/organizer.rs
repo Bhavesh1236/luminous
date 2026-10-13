@@ -15,7 +15,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 pub const DEFAULT_ORGANIZE_TEMPLATE: &str =
@@ -1301,14 +1301,19 @@ pub fn get_organize_config(db: &Database) -> Result<OrganizeConfig> {
 }
 
 /// Persist the organizer configuration into the `app_state` KV table.
-pub fn set_organize_config(db: &Database, config: &OrganizeConfig) -> Result<()> {
+///
+/// Returns true when this save turned auto-organization on (it was off before). The
+/// caller then owes the library a catch-up via [`auto_organize_library`]: the per-song
+/// hooks only ever see songs that change after the setting is on (#1689).
+pub fn set_organize_config(db: &Database, config: &OrganizeConfig) -> Result<bool> {
+    let was_on = get_organize_config(db)?.auto_organize;
     let conn = db.pool.get()?;
     let val = serde_json::to_string(config)?;
     conn.execute(
         "INSERT OR REPLACE INTO app_state (key, value) VALUES ('organize_config', ?1)",
         params![val],
     )?;
-    Ok(())
+    Ok(config.auto_organize && !was_on)
 }
 
 /// Automatically organize specific songs in the background if auto-organization is enabled.
@@ -1327,6 +1332,33 @@ pub fn auto_organize_song_ids(
     if song_ids.is_empty() {
         return Ok(AutoOrganizeResult::default());
     }
+    auto_organize(db, watcher_paused, self_writes, cover_manager, song_ids)
+}
+
+/// Auto-organizes every local song in the library, with the same guardrails as
+/// [`auto_organize_song_ids`]: the set the Organize view lists as ready to move.
+/// A no-op when auto-organization is off or another catch-up is already running.
+pub fn auto_organize_library(
+    db: &Database,
+    watcher_paused: &Arc<AtomicU32>,
+    self_writes: &Arc<crate::collection::SelfWriteTracker>,
+    cover_manager: Option<&CoverManager>,
+) -> Result<AutoOrganizeResult> {
+    let Some(_guard) = CatchUpGuard::acquire() else {
+        // The catch-up already running re-checks the setting between batches.
+        return Ok(AutoOrganizeResult::default());
+    };
+    // `compute_preview` reads an empty id list as "the whole local library".
+    auto_organize(db, watcher_paused, self_writes, cover_manager, &[])
+}
+
+fn auto_organize(
+    db: &Database,
+    watcher_paused: &Arc<AtomicU32>,
+    self_writes: &Arc<crate::collection::SelfWriteTracker>,
+    cover_manager: Option<&CoverManager>,
+    song_ids: &[i64],
+) -> Result<AutoOrganizeResult> {
     let config = get_organize_config(db)?;
     if !config.auto_organize {
         return Ok(AutoOrganizeResult::default());
@@ -1372,29 +1404,56 @@ pub fn auto_organize_song_ids(
         }
     }
 
-    if items_to_apply.is_empty() {
-        return Ok(AutoOrganizeResult {
-            moved_count: 0,
-            duplicates_count,
-            errors: vec![],
-        });
+    let mut result = AutoOrganizeResult {
+        moved_count: 0,
+        duplicates_count,
+        errors: vec![],
+    };
+
+    // Moves go in batches, re-reading the setting before each one, so turning
+    // auto-organization off stops a long library catch-up within a batch (#1689).
+    for (i, batch) in items_to_apply.chunks(AUTO_ORGANIZE_BATCH).enumerate() {
+        if i > 0 && !get_organize_config(db)?.auto_organize {
+            break;
+        }
+        let apply_res = execute_apply(
+            db,
+            watcher_paused,
+            self_writes,
+            batch,
+            config.clean_empty_dirs,
+            config.move_extra_files,
+            cover_manager,
+        )?;
+        result.moved_count += apply_res.moved_count;
+        result.errors.extend(apply_res.errors);
     }
 
-    let apply_res = execute_apply(
-        db,
-        watcher_paused,
-        self_writes,
-        &items_to_apply,
-        config.clean_empty_dirs,
-        config.move_extra_files,
-        cover_manager,
-    )?;
+    Ok(result)
+}
 
-    Ok(AutoOrganizeResult {
-        moved_count: apply_res.moved_count,
-        duplicates_count,
-        errors: apply_res.errors,
-    })
+/// How many moves auto-organize applies between checks that the setting is still on.
+const AUTO_ORGANIZE_BATCH: usize = 25;
+
+/// Set while a whole-library catch-up runs, so toggling the setting off and on
+/// again can't start a second one over the same files.
+static LIBRARY_CATCH_UP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+struct CatchUpGuard;
+
+impl CatchUpGuard {
+    fn acquire() -> Option<Self> {
+        LIBRARY_CATCH_UP_RUNNING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| CatchUpGuard)
+    }
+}
+
+impl Drop for CatchUpGuard {
+    fn drop(&mut self) {
+        LIBRARY_CATCH_UP_RUNNING.store(false, Ordering::Release);
+    }
 }
 
 #[cfg(test)]
@@ -2177,13 +2236,98 @@ mod tests {
         custom_cfg.preset = "custom".to_string();
         custom_cfg.template = "%artist/%title".to_string();
         custom_cfg.replace_spaces = true;
-        set_organize_config(&db, &custom_cfg).unwrap();
+        assert!(
+            set_organize_config(&db, &custom_cfg).unwrap(),
+            "off -> on reports that auto-organize was just turned on"
+        );
 
         // 3. Reload and verify persistence
         let loaded_cfg = get_organize_config(&db).unwrap();
         assert_eq!(loaded_cfg, custom_cfg);
         assert!(loaded_cfg.auto_organize);
         assert_eq!(loaded_cfg.template, "%artist/%title");
+
+        // 4. Saving again with it already on (e.g. a template edit) is not a turn-on,
+        //    and neither is turning it off.
+        custom_cfg.template = "%album/%title".to_string();
+        assert!(!set_organize_config(&db, &custom_cfg).unwrap());
+        custom_cfg.auto_organize = false;
+        assert!(!set_organize_config(&db, &custom_cfg).unwrap());
+    }
+
+    #[test]
+    fn test_auto_organize_library_catches_up_songs_indexed_before_enabling() {
+        use crate::collection::upsert_song;
+        use crate::models::{FileType, SongSource};
+
+        let temp_dir = tempfile::Builder::new()
+            .prefix("luminous_auto_org_lib_test_")
+            .tempdir()
+            .unwrap();
+        let src_dir = temp_dir.path().join("music");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let db = Database::new(temp_dir.path().join("appdata")).unwrap();
+        let conn = db.pool.get().unwrap();
+        conn.execute(
+            "INSERT INTO directories (path) VALUES (?1)",
+            params![src_dir.to_string_lossy().to_string()],
+        )
+        .unwrap();
+
+        // Two songs already in the library, waiting to be organized.
+        let mut files = Vec::new();
+        for (name, title) in [("a.mp3", "Song A"), ("b.mp3", "Song B")] {
+            let file = src_dir.join(name);
+            fs::write(&file, b"audio").unwrap();
+            upsert_song(
+                &conn,
+                &Song {
+                    path: Some(file.to_string_lossy().to_string()),
+                    title: Some(title.to_string()),
+                    artist: Some("Artist Beta".to_string()),
+                    album: Some("Album Two".to_string()),
+                    source: SongSource::LocalFile,
+                    filetype: FileType::Mp3,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            files.push(file);
+        }
+
+        let watcher_paused = Arc::new(AtomicU32::new(0));
+        let self_writes = Arc::new(crate::collection::SelfWriteTracker::new());
+
+        // Off: nothing moves.
+        let res_off = auto_organize_library(&db, &watcher_paused, &self_writes, None).unwrap();
+        assert_eq!(res_off.moved_count, 0);
+        assert!(files.iter().all(|f| f.exists()));
+
+        // Turning it on reports the transition; the catch-up moves both songs.
+        let cfg = OrganizeConfig {
+            auto_organize: true,
+            template: "%artist/%album/%title".to_string(),
+            ..OrganizeConfig::default()
+        };
+        assert!(set_organize_config(&db, &cfg).unwrap());
+
+        // A catch-up already running blocks a second one from starting.
+        {
+            let _running = CatchUpGuard::acquire().unwrap();
+            let res_busy = auto_organize_library(&db, &watcher_paused, &self_writes, None).unwrap();
+            assert_eq!(res_busy.moved_count, 0);
+            assert!(files.iter().all(|f| f.exists()));
+        }
+
+        let res_on = auto_organize_library(&db, &watcher_paused, &self_writes, None).unwrap();
+        assert_eq!(res_on.moved_count, 2);
+        assert!(res_on.errors.is_empty());
+
+        let album_dir = src_dir.join("Artist Beta").join("Album Two");
+        assert!(album_dir.join("Song A.mp3").exists());
+        assert!(album_dir.join("Song B.mp3").exists());
+        assert!(files.iter().all(|f| !f.exists()));
     }
 
     #[test]

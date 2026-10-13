@@ -409,8 +409,13 @@ footer.glass-surface {
 
 
 
-/* The native date picker's calendar glyph is drawn in a fixed colour that
-   vanishes on dark themes; repaint it with the field's own text colour. */
+/* The native date picker is drawn by the OS: its popup follows the field's
+   colour scheme (set per theme in ThemeStore), and its calendar glyph is a
+   fixed colour that vanishes on dark themes, so repaint that with the field's
+   own text colour. */
+input[type="date"] {
+  color-scheme: var(--picker-color-scheme, normal);
+}
 input[type="date"]::-webkit-calendar-picker-indicator {
   background: currentColor;
   opacity: 0.7;

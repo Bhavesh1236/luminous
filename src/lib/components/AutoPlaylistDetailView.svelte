@@ -49,7 +49,7 @@
   import type { PlaylistItem, QueuePopulationMode, Song } from "../types";
   import { i18n } from "../stores/i18n.svelte";
   import { toastStore } from "../stores/toast.svelte";
-  import { getPopulationModeSuffix, getBpmBucketLabel, getDaypartMixLabel } from "../utils/playlist";
+  import { getPopulationModeSuffix, getBpmBucketLabel, getDaypartMixLabel, getDaypartMixSourceLabel } from "../utils/playlist";
   import { genreColorHsl, resolveGenreColorIndex } from "../utils/genrePalette";
   import { rememberScroll } from "../utils/scrollMemory";
   import { openInPicard } from "../utils/picard";
@@ -103,13 +103,11 @@
     }
     return undefined;
   });
-  let updated = $derived.by(() => {
-    if (view.updated !== undefined) return view.updated;
-    if (playlistId !== undefined) {
-      return playlistsStore.playlists.find((p) => p.id === playlistId)?.updated;
-    }
-    return undefined;
-  });
+  // The playlist row backing this view (undefined for the built-in kinds that have none).
+  let backingPlaylist = $derived(
+    playlistId === undefined ? undefined : playlistsStore.playlists.find((p) => p.id === playlistId)
+  );
+  let updated = $derived(view.updated !== undefined ? view.updated : backingPlaylist?.updated);
   let pinRefKey = $derived(autoPlaylistRefKeyFor(view));
 
   let songs = $state<Song[]>([]);
@@ -167,29 +165,29 @@
     const base = kind === "decade"
       ? (decade || i18n.t("artistDetail.unknownYear"))
       : kind === "bpm"
-        ? (() => {
-            const pl = playlistsStore.playlists.find((p) => p.id === playlistId);
-            return getBpmBucketLabel(pl?.dynamic_spec, pl?.name ?? bpm ?? "");
-          })()
+        ? getBpmBucketLabel(backingPlaylist?.dynamic_spec, backingPlaylist?.name ?? bpm ?? "")
         : kind === "artist_tag"
-          ? (() => {
-              const pl = playlistsStore.playlists.find((p) => p.id === playlistId);
-              return pl?.name || toTitleCase(artistTag || "") || i18n.t("playlists.artistTagAutoPlaylist");
-            })()
+          ? backingPlaylist?.name || toTitleCase(artistTag || "") || i18n.t("playlists.artistTagAutoPlaylist")
           : kind === "daypart"
-            ? (() => {
-                // The row's own `name` IS the current bucket's English mix name
-                // — updated in place by the backend every time the daypart
-                // boundary crosses (#223); the label is localized from its spec.
-                const pl = playlistsStore.playlists.find((p) => p.id === playlistId);
-                return pl?.name ? getDaypartMixLabel(pl.dynamic_spec, pl.name) : i18n.t("playlists.daypartAutoPlaylist");
-              })()
+            ? // The row's own `name` IS the current bucket's English mix name
+              // — updated in place by the backend every time the daypart
+              // boundary crosses (#223); the label is localized from its spec.
+              backingPlaylist?.name
+                ? getDaypartMixLabel(backingPlaylist.dynamic_spec, backingPlaylist.name)
+                : i18n.t("playlists.daypartAutoPlaylist")
             : kind === "no_genre"
             ? i18n.t("songTags.noGenre", {}, "No Genre")
             : genre || i18n.t("artistDetail.unknownGenre");
     const suffix = getPopulationModeSuffix(populationMode);
     return suffix ? i18n.t("playlists.populationModeTitleFormat", { base, suffix }) : base;
   });
+
+  // Moment Mix only: the genre (or "Explore Your Library" random fill) the mix was built from.
+  let daypartSourceLabel = $derived(
+    kind === "daypart"
+      ? getDaypartMixSourceLabel(backingPlaylist?.dynamic_spec)
+      : null
+  );
 
   let topCovers = $derived(
     kind === "missing_metadata"
@@ -331,11 +329,7 @@
   }
 
   // Track backing playlist track_count reactively so refills trigger an instant re-fetch in the UI
-  let backingTrackCount = $derived.by(() => {
-    if (playlistId === undefined) return 0;
-    const pl = playlistsStore.playlists.find((p) => p.id === playlistId);
-    return pl?.track_count ?? 0;
-  });
+  let backingTrackCount = $derived(backingPlaylist?.track_count ?? 0);
 
   $effect(() => {
     const k = kind;
@@ -436,11 +430,7 @@
   }
 
   /** Derive the current queue population mode from the backing playlist row (#120). */
-  let populationMode = $derived.by((): QueuePopulationMode => {
-    if (playlistId === undefined) return "all";
-    const pl = playlistsStore.playlists.find((p) => p.id === playlistId);
-    return pl?.population_mode ?? "all";
-  });
+  let populationMode = $derived<QueuePopulationMode>(backingPlaylist?.population_mode ?? "all");
 
   let emptyStateMessage = $derived.by(() => {
     switch (populationMode) {
@@ -626,6 +616,10 @@
         </h1>
 
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-brand-text-primary font-medium">
+          {#if daypartSourceLabel}
+            <span>{daypartSourceLabel}</span>
+            <span>•</span>
+          {/if}
           <span>{i18n.plural("playlists.songsCount", songs.length)}</span>
           <span>•</span>
           <span>{totalDurationLabel}</span>

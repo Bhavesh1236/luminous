@@ -57,11 +57,28 @@ const DAYPART_BUCKET_TO_I18N_KEY: Record<string, string> = {
   latenight: "daypartLateNight",
 };
 
+/** The one place that knows the Moment Mix spec layout. `genre` is "" for the random-fill fallback. */
+function parseDaypartSpec(dynamicSpec: string | undefined | null): { bucket: string; genre: string } | null {
+  if (!dynamicSpec?.startsWith("daypart:")) return null;
+  const [, bucket, , ...genreParts] = dynamicSpec.split(":");
+  return { bucket, genre: genreParts.join(":").trim() };
+}
+
 /** Localizes a Moment Mix playlist's name from its `dynamic_spec`, falling back to `fallbackName`. */
 export function getDaypartMixLabel(dynamicSpec: string | undefined | null, fallbackName: string): string {
-  const bucket = dynamicSpec?.startsWith("daypart:") ? dynamicSpec.split(":")[1] : undefined;
-  const key = bucket !== undefined ? DAYPART_BUCKET_TO_I18N_KEY[bucket] : undefined;
+  const parsed = parseDaypartSpec(dynamicSpec);
+  const key = parsed ? DAYPART_BUCKET_TO_I18N_KEY[parsed.bucket] : undefined;
   return key ? i18n.t(`playlists.${key}`) : fallbackName;
+}
+
+/**
+ * What a Moment Mix was built from, ready to show: the genre grouping the backend picked, or
+ * "Explore Your Library" when it fell back to a random fill. Returns `null` for a spec that
+ * isn't a Moment Mix.
+ */
+export function getDaypartMixSourceLabel(dynamicSpec: string | undefined | null): string | null {
+  const parsed = parseDaypartSpec(dynamicSpec);
+  return parsed ? parsed.genre || i18n.t("home.exploreLibrary") : null;
 }
 
 export function getPlaylistDisplayName(

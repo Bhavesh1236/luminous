@@ -21,6 +21,18 @@
   import Button from "./Button.svelte";
   import Input from "./Input.svelte";
   import { PLAYER_DOCK_CLEARANCE_PX } from "../constants";
+  import {
+    DATE_FIELDS,
+    DATE_OP_CHOICES,
+    RELATIVE_UNITS,
+    applyDateOpChoice,
+    dateOpChoice,
+    formatRelative,
+    legacyTimestampToDay,
+    parseRelative,
+    type DateOpChoice,
+    type RelativeUnit,
+  } from "../utils/dateRule";
 
   interface Props {
     initialRules?: Rule[];
@@ -29,6 +41,27 @@
   }
 
   let { initialRules = [], editing = null, onClose }: Props = $props();
+
+  // "Recently Added", "Not Played Lately", or the field plus its day for a
+  // calendar-date rule — the window's size is left to the rule, not the name.
+  function dateRulePhrase(r: { field: string; op: string; value: string }): string {
+    const choice = dateOpChoice(r.op, r.value);
+    const added = r.field === "added";
+    if (choice === "within") {
+      return added
+        ? i18n.t("smartPlaylistBuilder.nameRecentlyAdded", {}, "Recently Added")
+        : i18n.t("smartPlaylistBuilder.nameRecentlyPlayed", {}, "Recently Played");
+    }
+    if (choice === "outside") {
+      return added
+        ? i18n.t("smartPlaylistBuilder.nameOlderAdditions", {}, "Older Additions")
+        : i18n.t("smartPlaylistBuilder.nameNotPlayedLately", {}, "Not Played Lately");
+    }
+    const label = added
+      ? i18n.t("smartPlaylistBuilder.fieldAdded", {}, "Date Added")
+      : i18n.t("smartPlaylistBuilder.fieldLastPlayed", {}, "Last Played");
+    return `${label} ${r.value}`;
+  }
 
   function generateSuggestedName(ruleList: Array<{ field: string; op: string; value: string }>): string {
     const activeRules = ruleList.filter((r) => r.value.trim() !== "");
@@ -79,6 +112,8 @@
         else parts.push(val);
       } else if (r.field === "rating") {
         parts.push(r.op === ">=" || r.op === ">" ? `${val}★+` : `${val}★`);
+      } else if (DATE_FIELDS.has(r.field)) {
+        parts.push(dateRulePhrase(r));
       } else {
         parts.push(val);
       }
@@ -116,7 +151,11 @@
 
   function createInitialRules(): RuleItem[] {
     if (initialRules && initialRules.length > 0) {
-      return initialRules.map((r, i) => ({ id: `rule_${i}_${Date.now()}`, ...r }));
+      return initialRules.map((r, i) => ({
+        id: `rule_${i}_${Date.now()}`,
+        ...r,
+        value: DATE_FIELDS.has(r.field) ? legacyTimestampToDay(r.value) : r.value,
+      }));
     }
     return [{ id: `rule_0_${Date.now()}`, field: "genre", op: "contains", value: "" }];
   }
@@ -152,8 +191,8 @@
     { key: "rating", label: i18n.t("smartPlaylistBuilder.fieldRating", {}, "Rating (Stars)"), type: "number" },
     { key: "playcount", label: i18n.t("smartPlaylistBuilder.fieldPlayCount", {}, "Play Count"), type: "number" },
     { key: "skipcount", label: i18n.t("smartPlaylistBuilder.fieldSkipCount", {}, "Skip Count"), type: "number" },
-    { key: "lastplayed", label: i18n.t("smartPlaylistBuilder.fieldLastPlayed", {}, "Last Played (Unix Timestamp)"), type: "number" },
-    { key: "added", label: i18n.t("smartPlaylistBuilder.fieldAdded", {}, "Date Added (Unix Timestamp)"), type: "number" },
+    { key: "lastplayed", label: i18n.t("smartPlaylistBuilder.fieldLastPlayed", {}, "Last Played"), type: "date" },
+    { key: "added", label: i18n.t("smartPlaylistBuilder.fieldAdded", {}, "Date Added"), type: "date" },
     { key: "track", label: i18n.t("smartPlaylistBuilder.fieldTrack", {}, "Track #"), type: "number" },
     { key: "disc", label: i18n.t("smartPlaylistBuilder.fieldDisc", {}, "Disc #"), type: "number" },
     { key: "bitrate", label: i18n.t("smartPlaylistBuilder.fieldBitrate", {}, "Bitrate"), type: "number" },
@@ -163,6 +202,31 @@
     { key: "compilation", label: i18n.t("smartPlaylistBuilder.fieldCompilation", {}, "Compilation"), type: "boolean" },
     { key: "duration", label: i18n.t("smartPlaylistBuilder.fieldDuration", {}, "Duration (MM:SS or Sec)"), type: "text" },
   ];
+
+  const dateOpLabels: Record<DateOpChoice, () => string> = {
+    "=": () => i18n.t("smartPlaylistBuilder.opDateIs", {}, "is"),
+    "!=": () => i18n.t("smartPlaylistBuilder.opDateIsNot", {}, "is not"),
+    "<": () => i18n.t("smartPlaylistBuilder.opDateBefore", {}, "before"),
+    ">": () => i18n.t("smartPlaylistBuilder.opDateAfter", {}, "after"),
+    "<=": () => i18n.t("smartPlaylistBuilder.opDateOnOrBefore", {}, "on or before"),
+    ">=": () => i18n.t("smartPlaylistBuilder.opDateOnOrAfter", {}, "on or after"),
+    within: () => i18n.t("smartPlaylistBuilder.opDateWithin", {}, "in the last"),
+    outside: () => i18n.t("smartPlaylistBuilder.opDateOutside", {}, "not in the last"),
+  };
+
+  const relativeUnitLabels: Record<RelativeUnit, () => string> = {
+    d: () => i18n.t("smartPlaylistBuilder.unitDays", {}, "days"),
+    w: () => i18n.t("smartPlaylistBuilder.unitWeeks", {}, "weeks"),
+    m: () => i18n.t("smartPlaylistBuilder.unitMonths", {}, "months"),
+    y: () => i18n.t("smartPlaylistBuilder.unitYears", {}, "years"),
+  };
+
+  /** Rewrite a date rule's relative window from the count box / unit picker;
+   * an empty count leaves the value empty so the rule is dropped. */
+  function setRelative(rule: RuleItem, count: string, unit: RelativeUnit) {
+    const n = Math.floor(Number(count));
+    rule.value = count.trim() !== "" && n >= 0 ? formatRelative(n, unit) : "";
+  }
 
   function getOperatorsForField(fieldKey: string) {
     const fieldObj = availableFields.find((f) => f.key === fieldKey);
@@ -344,9 +408,12 @@
               <Select
                 value={rule.field}
                 onchange={(e) => {
+                  const wasDate = DATE_FIELDS.has(rule.field);
                   rule.field = e.currentTarget.value;
                   const ops = getOperatorsForField(rule.field);
                   rule.op = ops[0].op;
+                  // A day or window means nothing to another kind of field.
+                  if (wasDate || DATE_FIELDS.has(rule.field)) rule.value = "";
                   // A boolean field has no free-text value to type, so seed
                   // it with a valid "1"/"0" right away — otherwise it'd read
                   // as an empty rule and get dropped from the saved spec.
@@ -362,7 +429,19 @@
                 {/each}
               </Select>
 
-              {#if fieldType !== "boolean"}
+              {#if fieldType === "date"}
+                <Select
+                  value={dateOpChoice(rule.op, rule.value)}
+                  onchange={(e) => {
+                    Object.assign(rule, applyDateOpChoice(e.currentTarget.value as DateOpChoice, rule));
+                  }}
+                  class="bg-brand-sidebar border border-brand-border text-brand-text-primary text-xs rounded-full pl-3.5 pr-8 py-1.5 focus:outline-none focus:border-brand-accent font-medium"
+                >
+                  {#each DATE_OP_CHOICES as choice}
+                    <option value={choice}>{dateOpLabels[choice]()}</option>
+                  {/each}
+                </Select>
+              {:else if fieldType !== "boolean"}
                 <Select
                   value={rule.op}
                   onchange={(e) => { rule.op = e.currentTarget.value; }}
@@ -383,6 +462,37 @@
                     label={i18n.t("smartPlaylistBuilder.fieldCompilation", {}, "Compilation")}
                   />
                 </div>
+              {:else if fieldType === "date"}
+                {@const relative = parseRelative(rule.value)}
+                {#if relative}
+                  <div class="flex-1 min-w-0 flex items-center gap-1.5">
+                    <Input
+                      type="number"
+                      value={relative.count}
+                      oninput={(e) => setRelative(rule, e.currentTarget.value, relative.unit)}
+                      size="sm"
+                      surface="sidebar"
+                      class="w-20 shrink-0"
+                    />
+                    <Select
+                      value={relative.unit}
+                      onchange={(e) => setRelative(rule, String(relative.count), e.currentTarget.value as RelativeUnit)}
+                      class="bg-brand-sidebar border border-brand-border text-brand-text-primary text-xs rounded-full pl-3.5 pr-8 py-1.5 focus:outline-none focus:border-brand-accent font-medium"
+                    >
+                      {#each RELATIVE_UNITS as unit}
+                        <option value={unit}>{relativeUnitLabels[unit]()}</option>
+                      {/each}
+                    </Select>
+                  </div>
+                {:else}
+                  <Input
+                    type="date"
+                    bind:value={rule.value}
+                    size="sm"
+                    surface="sidebar"
+                    class="flex-1 min-w-0"
+                  />
+                {/if}
               {:else if rule.field === "folder" || rule.field === "path" || rule.field === "subfolder" || rule.field === "directory"}
                 <div class="flex-1 min-w-0 flex items-center gap-1.5">
                   <Input

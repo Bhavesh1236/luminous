@@ -130,6 +130,7 @@
       if (["folder", "subfolder", "directory", "path"].includes(firstField)) return single;
       if (firstField === "genre" || firstField === "artist_tag" || firstField === "artist-tag") return `${single} ${mixWord}`;
       if (firstField === "artist") return `${single} ${i18n.t("smartPlaylistBuilder.selectionWord", {}, "Selection")}`;
+      if (DATE_FIELDS.has(firstField)) return single;
       if (firstField === "rating") return `${single} ${i18n.t("smartPlaylistBuilder.songsWord", {}, "Songs")}`;
       return `${single} ${i18n.t("smartPlaylistBuilder.playlistWord", {}, "Playlist")}`;
     }

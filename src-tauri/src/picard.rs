@@ -24,11 +24,6 @@ fn is_flatpak_sandbox() -> bool {
     Path::new("/.flatpak-info").exists() || std::env::var_os("FLATPAK_ID").is_some()
 }
 
-#[cfg(windows)]
-fn is_flatpak_sandbox() -> bool {
-    false
-}
-
 /// Constructs a `Command` targeting either the host environment (via `flatpak-spawn --host`
 /// when sandboxed) or running directly on the system.
 fn host_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {

@@ -13,7 +13,7 @@ mod dynamic;
 mod import_export;
 mod mutation_undo;
 
-pub use dynamic::{reconcile_and_sync, DynamicPlaylistDelta};
+pub use dynamic::{reconcile_and_sync, reconcile_each_day, DynamicPlaylistDelta};
 
 /// SQLite treats a negative `LIMIT` as "no limit" — used when populating an
 /// auto-playlist so it includes every matching song, however large the

@@ -232,6 +232,7 @@
       <div class="list">
         <div class="row"><div class="mk">•</div><div>Fai clic su <b>Nuova playlist intelligente</b>, aggiungi le regole, poi assegna un nome e salvala.</div></div>
         <div class="row"><div class="mk">•</div><div>Usa <b>Modifica regole</b> per cambiarle in seguito.</div></div>
+        <div class="row"><div class="mk">•</div><div>Le regole su <b>Ultima riproduzione</b> e <b>Data di aggiunta</b> accettano una data dal selettore di date, o un intervallo come <b>negli ultimi 30 giorni</b>, che mantiene aggiornata la playlist.</div></div>
       </div>
       <figure class="shot mw-700 mb-28">
         <img src="assets/it/screenshots/dark/playlist-smart-edit.webp" alt="Modifica delle regole di una playlist intelligente" width="1280" height="800" loading="lazy">
@@ -337,8 +338,8 @@
         <div class="tr"><code>rating / stars</code><div>numero</div><div>Valutazione a stelle, da 0 a 5</div></div>
         <div class="tr"><code>playcount / plays</code><div>numero</div><div>Numero di riproduzioni</div></div>
         <div class="tr"><code>skipcount / skips</code><div>numero</div><div>Numero di salti</div></div>
-        <div class="tr"><code>lastplayed / last_played</code><div>numero</div><div>Marcatore temporale dell'ultima riproduzione (secondi Unix)</div></div>
-        <div class="tr"><code>added</code><div>numero</div><div>Marcatore temporale della data di aggiunta (secondi Unix)</div></div>
+        <div class="tr"><code>lastplayed / last_played</code><div>data</div><div>Data dell'ultima riproduzione</div></div>
+        <div class="tr"><code>added</code><div>data</div><div>Data di aggiunta</div></div>
         <div class="tr"><code>track / track_number</code><div>numero</div><div>Numero di traccia</div></div>
         <div class="tr"><code>disc / disc_number</code><div>numero</div><div>Numero del disco</div></div>
         <div class="tr"><code>bitrate</code><div>numero</div><div>Bitrate (kbps)</div></div>
@@ -349,6 +350,7 @@
         <div class="tr"><code>duration / length</code><div>durata</div><div>Durata della traccia, vedi sotto</div></div>
       </div>
       <p class="mb-28"><code>duration</code> accetta secondi (<code>duration:&gt;180</code>), <code>MM:SS</code> (<code>duration:&gt;3:30</code>) oppure <code>H:MM:SS</code> (<code>duration:&lt;1:02:03</code>).</p>
+      <p class="mb-28"><code>added</code> e <code>lastplayed</code> accettano una data (<code>added:&gt;=2026-01-31</code>) o un intervallo contato a ritroso da oggi: <code>-30d</code>, <code>-2w</code>, <code>-6m</code>, <code>-1y</code> (giorni, settimane, mesi, anni). <code>&gt;=</code> parte dall'inizio di quel giorno, <code>&lt;=</code> arriva alla fine e <code>=</code> corrisponde a qualsiasi momento di quel giorno. <code>added:&gt;=-30d</code> significa sempre gli ultimi 30 giorni. Un brano mai riprodotto conta come più vecchio di qualsiasi data, quindi <code>lastplayed:&lt;-1y</code> lo include.</p>
       <h2>Salva una ricerca come playlist intelligente</h2>
       <p class="mb-28">Quando la ricerca contiene un termine <code>field:value</code>, fai clic su <b>Apri generatore →</b> nel menu a discesa. Ogni termine diventa una regola; aggiungine altre, assegna un nome alla playlist e salvala.</p>
       <h2>Esempi</h2>
@@ -360,6 +362,8 @@
         <div class="tr"><div>Mix di testo libero e campi</div><code>rating:&gt;=4 "tom cochrane"</code></div>
         <div class="tr"><div>Solo album compilation</div><code>compilation:1</code></div>
         <div class="tr"><div>Tracce di oltre 3:30</div><code>duration:&gt;3:30</code></div>
+        <div class="tr"><div>Aggiunti negli ultimi 30 giorni</div><code>added:&gt;=-30d</code></div>
+        <div class="tr"><div>Non riprodotti nell'ultimo anno (o mai)</div><code>lastplayed:&lt;-1y</code></div>
       </div>
     </section>
 

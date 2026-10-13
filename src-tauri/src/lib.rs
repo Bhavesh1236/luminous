@@ -1301,6 +1301,10 @@ pub fn run() {
                         tauri::async_runtime::spawn(playlist::reconcile_and_sync(handle.clone()));
                     });
                 }
+                // Relative-date rules ("played in the last 30 days") change
+                // with the clock alone, so also reconcile at startup and at
+                // each local midnight.
+                tauri::async_runtime::spawn(playlist::reconcile_each_day(handle));
             }
 
             // Keep the persisted Genres curation hierarchy (#545) in step

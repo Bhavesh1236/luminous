@@ -83,6 +83,23 @@ pub async fn reconcile_and_sync(app: tauri::AppHandle) {
     }
 }
 
+/// Reconciles once at startup and again whenever the local date changes, for
+/// the rules whose answer moves with the clock: "played in the last 30 days"
+/// gains and loses songs at midnight with no library event to announce it.
+/// Polls the date rather than sleeping until midnight so a suspended machine
+/// catches up on wake. Runs for the life of the app.
+pub async fn reconcile_each_day(app: tauri::AppHandle) {
+    let mut last_reconciled = None;
+    loop {
+        let today = chrono::Local::now().date_naive();
+        if last_reconciled != Some(today) {
+            last_reconciled = Some(today);
+            reconcile_and_sync(app.clone()).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
 async fn reconcile_pass(app: &tauri::AppHandle) {
     use tauri::{Emitter, Manager};
 

@@ -12,7 +12,18 @@
 //! filters ANDed together, same as any two field filters. Unrecognized
 //! fields are silently dropped (not an error) rather than falling back to a
 //! bare-term match.
+//!
+//! `added` and `lastplayed` also take calendar dates: an absolute day
+//! (`2026-01-31`) or a relative offset back from today (`-30d`; units `d`
+//! days, `w` weeks, `m` months, `y` years). Both name a *day* in the local
+//! time zone, and the comparators read as a person would say them: `>=` from
+//! the start of that day, `>` after the end of it, `<` before it, `<=` up to
+//! the end of it, `=` anywhere within it. Relative offsets resolve against
+//! the clock when the query is parsed, so `added:>=-30d` always means "the
+//! last 30 days". A song with no `lastplayed` counts as older than any date.
+//! A bare integer is still an epoch-seconds timestamp, compared as-is.
 
+use chrono::{DateTime, Duration, Local, Months, NaiveDate, TimeZone};
 use rusqlite::types::{ToSqlOutput, Value as SqlValue};
 use rusqlite::ToSql;
 
@@ -52,6 +63,13 @@ pub enum FilterValue {
     Text(String),
     Int(i64),
     Float(f64),
+    /// Epoch seconds `[start, end)` covering one local calendar day, for
+    /// `=` / `!=` on a date column. Binds as two parameters, not one — go
+    /// through [`FieldFilter::push_clause`] rather than binding the value.
+    DayRange {
+        start: i64,
+        end: i64,
+    },
 }
 
 impl ToSql for FilterValue {
@@ -60,6 +78,9 @@ impl ToSql for FilterValue {
             FilterValue::Text(s) => Ok(ToSqlOutput::Owned(SqlValue::Text(s.clone()))),
             FilterValue::Int(i) => Ok(ToSqlOutput::Owned(SqlValue::Integer(*i))),
             FilterValue::Float(f) => Ok(ToSqlOutput::Owned(SqlValue::Real(*f))),
+            FilterValue::DayRange { .. } => Err(rusqlite::Error::ToSqlConversionFailure(
+                "a day range binds as two parameters; use FieldFilter::push_clause".into(),
+            )),
         }
     }
 }
@@ -77,8 +98,49 @@ pub struct FieldFilter {
     pub value: FilterValue,
 }
 
+/// Columns holding epoch-second dates, which take calendar-date values.
+fn is_date_column(sql_column: &str) -> bool {
+    matches!(sql_column, "lastplayed" | "added")
+}
+
 impl FieldFilter {
+    /// Appends this filter's value(s) to `params` and returns the `WHERE`
+    /// clause referring to them. The one way callers should splice a filter
+    /// into a query: how many parameters a filter needs is its own business.
+    pub fn push_clause(self, params: &mut Vec<Box<dyn ToSql>>) -> String {
+        let clause = self.to_sql_clause(params.len() + 1);
+        match self.value {
+            FilterValue::DayRange { start, end } => {
+                params.push(Box::new(start));
+                params.push(Box::new(end));
+            }
+            value => params.push(Box::new(value)),
+        }
+        clause
+    }
+
+    /// The clause for this filter with its first parameter at `?{param_idx}`
+    /// (a [`FilterValue::DayRange`] takes `param_idx` and `param_idx + 1`).
     pub fn to_sql_clause(&self, param_idx: usize) -> String {
+        if let FilterValue::DayRange { .. } = self.value {
+            let col = self.sql_column;
+            let inside = format!("{col} >= ?{param_idx} AND {col} < ?{}", param_idx + 1);
+            return if self.op == Op::Neq {
+                // A never-set date is outside every day. NOT NULL is NULL,
+                // so default that case to "matches".
+                format!("COALESCE(NOT ({inside}), 1)")
+            } else {
+                format!("({inside})")
+            };
+        }
+        if is_date_column(self.sql_column) && matches!(self.op, Op::Lt | Op::Lte | Op::Neq) {
+            // A never-played song is older than any date.
+            return format!(
+                "({col} IS NULL OR {col} {op} ?{param_idx})",
+                col = self.sql_column,
+                op = self.op.to_sql()
+            );
+        }
         if self.sql_column == "artist_tag" {
             format!(
                 "COALESCE(NULLIF(album_artist, ''), artist) IN (SELECT artist_key FROM artist_profiles, json_each(artist_profiles.tags) WHERE json_each.value {} ?{})",
@@ -118,11 +180,17 @@ pub struct ParsedQuery {
 /// instead (quotes stripped), so malformed input degrades to a plain-text
 /// search rather than being rejected.
 pub fn parse_query(raw_query: &str) -> ParsedQuery {
+    parse_query_at(raw_query, Local::now())
+}
+
+/// [`parse_query`] with the clock injected, which relative date values
+/// (`-30d`) resolve against.
+pub fn parse_query_at(raw_query: &str, now: DateTime<Local>) -> ParsedQuery {
     let mut parsed = ParsedQuery::default();
     let tokens = tokenize(raw_query);
 
     for token in tokens {
-        if let Some(filter) = parse_field_filter(&token) {
+        if let Some(filter) = parse_field_filter(&token, now) {
             parsed.field_filters.push(filter);
         } else {
             let clean = token.trim_matches('"').trim_matches('\'').trim();
@@ -265,7 +333,7 @@ fn parse_op_and_raw_value(raw: &str, is_numeric: bool) -> (Op, String) {
     (op, clean.to_string())
 }
 
-fn parse_field_filter(token: &str) -> Option<FieldFilter> {
+fn parse_field_filter(token: &str, now: DateTime<Local>) -> Option<FieldFilter> {
     let colon_idx = token.find(':')?;
     let (field_part, val_part) = token.split_at(colon_idx);
     let field_clean = field_part.trim().to_lowercase();
@@ -310,6 +378,20 @@ fn parse_field_filter(token: &str) -> Option<FieldFilter> {
         return None;
     }
 
+    if is_date_column(sql_column) {
+        if let Some((op, value)) =
+            parse_day(&raw_val, now.date_naive()).and_then(|day| day_comparison(&op, day))
+        {
+            return Some(FieldFilter {
+                field: field_clean,
+                sql_column,
+                is_numeric,
+                op,
+                value,
+            });
+        }
+    }
+
     let value = if sql_column == "path" {
         let clean_path = strip_enclosing_quotes(&raw_val);
         let mut normalized_val = clean_path.replace('\\', "/");
@@ -343,6 +425,54 @@ fn parse_field_filter(token: &str) -> Option<FieldFilter> {
         is_numeric,
         op,
         value,
+    })
+}
+
+/// Midnight starting `day` in the local time zone, as epoch seconds. A zone
+/// whose clocks skip midnight (a DST gap) starts the day at its first
+/// existing hour.
+fn local_day_start(day: NaiveDate) -> Option<i64> {
+    (0..4).find_map(|hour| {
+        let naive = day.and_hms_opt(hour, 0, 0)?;
+        Local
+            .from_local_datetime(&naive)
+            .earliest()
+            .map(|t| t.timestamp())
+    })
+}
+
+/// Read a date value: `YYYY-MM-DD`, or `-<n><unit>` counted back from
+/// `today` (`d` days, `w` weeks, `m` months, `y` years). `None` for anything
+/// else, including bare integers, which stay epoch timestamps.
+fn parse_day(raw: &str, today: NaiveDate) -> Option<NaiveDate> {
+    if let Ok(day) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        return Some(day);
+    }
+    let rest = raw.strip_prefix('-')?;
+    let unit = rest.chars().last()?;
+    let count: u32 = rest[..rest.len() - unit.len_utf8()].parse().ok()?;
+    match unit.to_ascii_lowercase() {
+        'd' => today.checked_sub_signed(Duration::days(i64::from(count))),
+        'w' => today.checked_sub_signed(Duration::days(i64::from(count) * 7)),
+        'm' => today.checked_sub_months(Months::new(count)),
+        'y' => today.checked_sub_months(Months::new(count.checked_mul(12)?)),
+        _ => None,
+    }
+}
+
+/// Translate "`op` this calendar day" into a comparison against epoch
+/// seconds: `>=` / `<` pin to the day's start, `>` / `<=` to the start of
+/// the next day, `=` / `!=` to the whole day.
+fn day_comparison(op: &Op, day: NaiveDate) -> Option<(Op, FilterValue)> {
+    let start = local_day_start(day)?;
+    let end = local_day_start(day.succ_opt()?)?;
+    Some(match op {
+        Op::Gte => (Op::Gte, FilterValue::Int(start)),
+        Op::Lt => (Op::Lt, FilterValue::Int(start)),
+        Op::Gt => (Op::Gte, FilterValue::Int(end)),
+        Op::Lte => (Op::Lt, FilterValue::Int(end)),
+        Op::Neq => (Op::Neq, FilterValue::DayRange { start, end }),
+        Op::Eq | Op::Contains => (Op::Eq, FilterValue::DayRange { start, end }),
     })
 }
 
@@ -591,6 +721,140 @@ mod tests {
                 "/home/esoltys/Music/Shortwave/CKLZ-FM 104.7 \"The Lizard\" Kelowna, BC"
                     .to_string()
             )
+        );
+    }
+
+    // --- date values for `added` / `lastplayed` ---
+
+    fn at(y: i32, m: u32, d: u32, h: u32) -> DateTime<Local> {
+        Local
+            .with_ymd_and_hms(y, m, d, h, 30, 0)
+            .earliest()
+            .unwrap()
+    }
+
+    fn day_start(y: i32, m: u32, d: u32) -> i64 {
+        local_day_start(NaiveDate::from_ymd_opt(y, m, d).unwrap()).unwrap()
+    }
+
+    fn only_filter(query: &str, now: DateTime<Local>) -> FieldFilter {
+        let mut parsed = parse_query_at(query, now);
+        assert!(
+            parsed.bare_terms.is_empty(),
+            "{query} fell back to bare terms"
+        );
+        assert_eq!(parsed.field_filters.len(), 1);
+        parsed.field_filters.remove(0)
+    }
+
+    #[test]
+    fn absolute_day_comparators_read_as_a_person_would() {
+        let now = at(2026, 6, 15, 12);
+        let (start, end) = (day_start(2026, 1, 31), day_start(2026, 2, 1));
+
+        let f = only_filter("added:>=2026-01-31", now);
+        assert_eq!((f.op, f.value), (Op::Gte, FilterValue::Int(start)));
+        let f = only_filter("added:>2026-01-31", now);
+        assert_eq!((f.op, f.value), (Op::Gte, FilterValue::Int(end)));
+        let f = only_filter("added:<2026-01-31", now);
+        assert_eq!((f.op, f.value), (Op::Lt, FilterValue::Int(start)));
+        let f = only_filter("added:<=2026-01-31", now);
+        assert_eq!((f.op, f.value), (Op::Lt, FilterValue::Int(end)));
+        // Bare date means "on that day".
+        let f = only_filter("lastplayed:2026-01-31", now);
+        assert_eq!(
+            (f.op, f.value),
+            (Op::Eq, FilterValue::DayRange { start, end })
+        );
+        let f = only_filter("lastplayed:!=2026-01-31", now);
+        assert_eq!(
+            (f.op, f.value),
+            (Op::Neq, FilterValue::DayRange { start, end })
+        );
+    }
+
+    #[test]
+    fn relative_offsets_resolve_against_the_clock_to_a_day() {
+        let now = at(2026, 3, 31, 23);
+        let cases = [
+            ("-30d", (2026, 3, 1)),
+            ("-2w", (2026, 3, 17)),
+            ("-1m", (2026, 2, 28)), // month-end clamps
+            ("-1y", (2025, 3, 31)),
+            ("-0d", (2026, 3, 31)),
+        ];
+        for (offset, (y, m, d)) in cases {
+            let f = only_filter(&format!("added:>={offset}"), now);
+            assert_eq!(f.value, FilterValue::Int(day_start(y, m, d)), "{offset}");
+        }
+        // The hour of the day doesn't move the window.
+        let early = only_filter("added:>=-7d", at(2026, 3, 31, 0));
+        let late = only_filter("added:>=-7d", at(2026, 3, 31, 23));
+        assert_eq!(early.value, late.value);
+    }
+
+    #[test]
+    fn integers_and_junk_are_not_dates() {
+        let now = at(2026, 6, 15, 12);
+        let f = only_filter("added:>=1700000000", now);
+        assert_eq!((f.op, f.value), (Op::Gte, FilterValue::Int(1_700_000_000)));
+        let f = only_filter("added:>=-5", now);
+        assert_eq!(f.value, FilterValue::Int(-5));
+        // Not a real date / unknown unit: the token degrades to a bare term.
+        for bad in ["added:2026-02-30", "added:-3x", "added:-d"] {
+            let parsed = parse_query_at(bad, now);
+            assert!(parsed.field_filters.is_empty(), "{bad}");
+        }
+        // Other numeric fields never read dates.
+        assert!(parse_query_at("year:2026-01-01", now)
+            .field_filters
+            .is_empty());
+    }
+
+    #[test]
+    fn date_filters_match_songs_through_sql() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE songs (id INTEGER, lastplayed INTEGER)", [])
+            .unwrap();
+        let now = at(2026, 6, 15, 12);
+        let day = |y, m, d| day_start(y, m, d);
+        // 1: never played, 2: long ago, 3: on 6/10 at noon, 4: today.
+        for (id, lp) in [
+            (1, None),
+            (2, Some(day(2025, 1, 1) + 60)),
+            (3, Some(day(2026, 6, 10) + 43_200)),
+            (4, Some(day(2026, 6, 15) + 60)),
+        ] {
+            conn.execute(
+                "INSERT INTO songs VALUES (?1, ?2)",
+                rusqlite::params![id, lp],
+            )
+            .unwrap();
+        }
+        let ids = |query: &str| -> Vec<i64> {
+            let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+            let clauses: Vec<String> = parse_query_at(query, now)
+                .field_filters
+                .into_iter()
+                .map(|f| f.push_clause(&mut params))
+                .collect();
+            let sql = format!(
+                "SELECT id FROM songs WHERE {} ORDER BY id",
+                clauses.join(" AND ")
+            );
+            let refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            let mut stmt = conn.prepare(&sql).unwrap();
+            let rows = stmt.query_map(refs.as_slice(), |r| r.get(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(ids("lastplayed:>=-7d"), vec![3, 4]); // the last 7 days
+        assert_eq!(ids("lastplayed:<-7d"), vec![1, 2]); // not in the last 7 days, never-played included
+        assert_eq!(ids("lastplayed:2026-06-10"), vec![3]);
+        assert_eq!(ids("lastplayed:!=2026-06-10"), vec![1, 2, 4]);
+        assert_eq!(ids("lastplayed:>2026-06-10"), vec![4]);
+        assert_eq!(
+            ids("lastplayed:>=2026-06-01 lastplayed:<=2026-06-10"),
+            vec![3]
         );
     }
 }

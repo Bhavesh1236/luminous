@@ -963,6 +963,8 @@ export class ThemeStore {
     root.classList.toggle("theme-glass", true);
 
     const isDark = !isLightColor(bgMain);
+    // Lets the OS-drawn date-picker popup match the theme (see app.css).
+    root.style.setProperty("--picker-color-scheme", isDark ? "dark" : "light");
     const alpha = glassAlpha(isDark);
     root.style.setProperty("--glass-bg-sidebar", hexToRgbaString(bgSidebar, alpha));
     root.style.setProperty("--glass-bg-playerbar", hexToRgbaString(bgPlayerbar, alpha));

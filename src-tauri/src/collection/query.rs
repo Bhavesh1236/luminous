@@ -57,10 +57,7 @@ impl CollectionScanner {
 
         // Add qualified field filter clauses
         for filter in parsed.field_filters {
-            let param_idx = query_params.len() + 1;
-            let clause = filter.to_sql_clause(param_idx);
-            query_params.push(Box::new(filter.value));
-            where_clauses.push(clause);
+            where_clauses.push(filter.push_clause(&mut query_params));
         }
 
         query_params.push(Box::new(limit));
@@ -126,10 +123,7 @@ impl CollectionScanner {
         }
 
         for filter in parsed.field_filters {
-            let param_idx = query_params.len() + 1;
-            let clause = filter.to_sql_clause(param_idx);
-            query_params.push(Box::new(filter.value));
-            where_clauses.push(clause);
+            where_clauses.push(filter.push_clause(&mut query_params));
         }
 
         query_params.push(Box::new(limit));

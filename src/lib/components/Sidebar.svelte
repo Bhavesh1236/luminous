@@ -174,7 +174,7 @@
       </button>
 
       {#if subItemsVisible}
-        <div class="pl-4 pr-1 py-0.5 space-y-0 border-l-2 border-brand-accent/30 ml-[18px] my-0.5">
+        <div class="pl-[9px] pr-1 py-0.5 space-y-0 border-l-2 border-brand-accent/30 ml-[calc(var(--sidebar-icon-axis)_-_1px)] my-0.5">
           <button
             onclick={() => { navigationStore.activeTab = "collection"; navigationStore.activeSubTab = "artists"; navigationStore.selectedArtistName = null; navigationStore.selectedAlbumName = null; }}
             class="w-full flex items-center justify-between px-2.5 py-1 rounded-md text-xs transition-colors {navigationStore.activeTab === 'collection' && navigationStore.activeSubTab === 'artists' && !navigationStore.selectedArtistName && !navigationStore.selectedAlbumName ? 'bg-brand-accent/20 text-brand-accent-text font-semibold' : 'text-brand-text-secondary hover:text-brand-text-primary hover:bg-brand-accent/10'}"
@@ -255,7 +255,7 @@
       </button>
 
       {#if subItemsVisible}
-        <div class="pl-4 pr-1 py-0.5 space-y-0 border-l-2 border-brand-accent/30 ml-[18px] my-0.5">
+        <div class="pl-[9px] pr-1 py-0.5 space-y-0 border-l-2 border-brand-accent/30 ml-[calc(var(--sidebar-icon-axis)_-_1px)] my-0.5">
           <button
             onclick={() => openPlaylistsSubTab("auto")}
             class="w-full flex items-center justify-between px-2.5 py-1 rounded-md text-xs transition-colors {navigationStore.activeTab === 'playlists' && navigationStore.playlistsSubTab === 'auto' && !navigationStore.selectedPlaylistId && !navigationStore.selectedAutoPlaylist ? 'bg-brand-accent/20 text-brand-accent-text font-semibold' : 'text-brand-text-secondary hover:text-brand-text-primary hover:bg-brand-accent/10'}"
@@ -378,25 +378,28 @@
 
   <!-- MusicBrainz Login / Profile Section (#1388); hidden while Offline (#1398) -->
   {#if prefs.onlineEnabled}
-  <div class="{layoutCollapsed ? 'p-2' : 'px-3 py-2'} border-t border-brand-border/40 w-full flex flex-col items-center">
+  <div class="{layoutCollapsed ? 'p-2' : 'px-4 py-2'} border-t border-brand-border/40 w-full flex flex-col items-center">
     {#if musicbrainzStore.isLoggedIn}
       <button
         bind:this={profileButtonEl}
         onclick={() => { showProfilePopover = !showProfilePopover; }}
-        class="flex items-center gap-2.5 transition-colors duration-150 {showProfilePopover ? 'bg-brand-accent/20 text-brand-accent-text' : 'text-brand-text-secondary hover:bg-brand-accent/10 hover:text-brand-accent-text-hover'} {layoutCollapsed ? 'justify-center w-10 h-10 rounded-xl p-0' : 'w-full px-2.5 py-1.5 rounded-lg text-sm font-medium'}"
+        class="flex items-center gap-3 transition-colors duration-150 {showProfilePopover ? 'bg-brand-accent/20 text-brand-accent-text' : 'text-brand-text-secondary hover:bg-brand-accent/10 hover:text-brand-accent-text-hover'} {layoutCollapsed ? 'justify-center w-10 h-10 rounded-xl p-0' : 'w-full px-3 py-1.5 rounded-lg text-sm font-medium'}"
         title={`${musicbrainzStore.username} (MusicBrainz)${pausedLabel ? ` – ${pausedLabel}` : ""}`}
       >
-        <div class="relative shrink-0 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 28" class="{layoutCollapsed ? 'w-5 h-5' : 'w-4 h-4'} shrink-0">
-            <polygon fill="#ba478f" points="12 0 0 7 0 21 12 28 12 0"/>
-            <polygon fill="#eb743b" points="13 0 25 7 25 21 13 28 13 0"/>
-          </svg>
-          <span
-            class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-brand-sidebar {scrobblingPaused ? 'bg-amber-500' : 'bg-emerald-500'}"
-            data-testid="musicbrainz-status-dot"
-            role={pausedLabel ? 'img' : undefined}
-            aria-label={pausedLabel}
-          ></span>
+        <div class="shrink-0 flex items-center justify-center {layoutCollapsed ? '' : 'w-7 h-7'}">
+          <!-- Inner wrapper anchors the status dot to the logo, not the w-7 slot. -->
+          <div class="relative flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 28" class="{layoutCollapsed ? 'w-5 h-5' : 'w-4 h-4'} shrink-0">
+              <polygon fill="#ba478f" points="12 0 0 7 0 21 12 28 12 0"/>
+              <polygon fill="#eb743b" points="13 0 25 7 25 21 13 28 13 0"/>
+            </svg>
+            <span
+              class="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-brand-sidebar {scrobblingPaused ? 'bg-amber-500' : 'bg-emerald-500'}"
+              data-testid="musicbrainz-status-dot"
+              role={pausedLabel ? 'img' : undefined}
+              aria-label={pausedLabel}
+            ></span>
+          </div>
         </div>
         {#if !layoutCollapsed}
           <span class="truncate text-xs font-semibold text-brand-text-primary text-left flex-1 min-w-0">
@@ -411,10 +414,12 @@
         class="flex items-center gap-3 transition-colors duration-150 text-brand-text-secondary hover:bg-brand-accent/10 hover:text-brand-accent-text-hover {layoutCollapsed ? 'justify-center w-10 h-10 rounded-xl p-0' : 'w-full px-3 py-1.5 rounded-lg text-sm font-medium'}"
         title={i18n.t('sidebar.musicbrainzLogin', {}, 'Log In to MusicBrainz')}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 28" class="{layoutCollapsed ? 'w-5 h-5' : 'w-4 h-4 icon-align'} shrink-0">
-          <polygon fill="#ba478f" points="12 0 0 7 0 21 12 28 12 0"/>
-          <polygon fill="#eb743b" points="13 0 25 7 25 21 13 28 13 0"/>
-        </svg>
+        <div class="shrink-0 flex items-center justify-center {layoutCollapsed ? '' : 'w-7 h-7'}">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 28" class="{layoutCollapsed ? 'w-5 h-5' : 'w-4 h-4 icon-align'} shrink-0">
+            <polygon fill="#ba478f" points="12 0 0 7 0 21 12 28 12 0"/>
+            <polygon fill="#eb743b" points="13 0 25 7 25 21 13 28 13 0"/>
+          </svg>
+        </div>
         {#if !layoutCollapsed}
           <span class="truncate whitespace-nowrap">{i18n.t('sidebar.musicbrainzLogin', {}, 'Log In to MusicBrainz')}</span>
         {/if}
@@ -438,6 +443,15 @@
 </aside>
 
 <style>
+  /* Horizontal centre of the expanded nav icons, measured from the content edge
+     inside the sidebar's p-4: nav button px-3 (12) + half the w-7 icon slot
+     (14). The footer's logo slot uses the same padding, and the sub-item rails
+     are centred on this line (margin = axis - half the 2px border), so change
+     this value together with those paddings. */
+  aside {
+    --sidebar-icon-axis: 26px;
+  }
+
   /* Icons sit in a flex row centered against label text, but text's visible
      glyphs sit lower than its line box center (line-height leading above/below
      cap height isn't symmetric), so a geometrically-centered icon reads as too

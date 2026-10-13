@@ -349,7 +349,7 @@
   style="padding-bottom: {dockClearance + 16}px"
 >
   <div
-    class="bg-brand-sidebar border border-brand-border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col"
+    class="bg-brand-sidebar border border-brand-border rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col"
     style="max-height: min(90vh, calc(100vh - {dockClearance + 32}px))"
   >
     <div class="flex items-center justify-between px-6 py-4 border-b border-brand-border/60 bg-brand-main/50">
@@ -405,7 +405,7 @@
         <div class="space-y-2.5">
           {#each rules as rule (rule.id)}
             {@const fieldType = availableFields.find((f) => f.key === rule.field)?.type}
-            <div class="flex items-center gap-2 bg-brand-main/60 p-2.5 rounded-xl border border-brand-border/40">
+            <div class="flex flex-wrap items-center gap-2 bg-brand-main/60 p-2.5 rounded-xl border border-brand-border/40">
               <Select
                 value={rule.field}
                 onchange={(e) => {
@@ -466,7 +466,7 @@
               {:else if fieldType === "date"}
                 {@const relative = parseRelative(rule.value)}
                 {#if relative}
-                  <div class="flex-1 min-w-0 flex items-center gap-1.5">
+                  <div class="flex-1 min-w-48 flex items-center gap-1.5">
                     <Input
                       type="number"
                       value={relative.count}
@@ -491,11 +491,11 @@
                     bind:value={rule.value}
                     size="sm"
                     surface="sidebar"
-                    class="flex-1 min-w-0"
+                    class="flex-1 min-w-44"
                   />
                 {/if}
               {:else if rule.field === "folder" || rule.field === "path" || rule.field === "subfolder" || rule.field === "directory"}
-                <div class="flex-1 min-w-0 flex items-center gap-1.5">
+                <div class="flex-1 min-w-52 flex items-center gap-1.5">
                   <Input
                     type="text"
                     bind:value={rule.value}
@@ -503,7 +503,7 @@
                     placeholder={i18n.t("smartPlaylistBuilder.folderValuePlaceholder", {}, "e.g. Radio Downloads or browse...")}
                     size="sm"
                     surface="sidebar"
-                    class="flex-1 min-w-0"
+                    class="flex-1 min-w-44"
                   />
                   <button
                     type="button"
@@ -521,7 +521,7 @@
                   placeholder={i18n.t("smartPlaylistBuilder.valuePlaceholder")}
                   size="sm"
                   surface="sidebar"
-                  class="flex-1 min-w-0"
+                  class="flex-1 min-w-44"
                 />
               {/if}
 

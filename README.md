@@ -31,10 +31,10 @@ Luminous doesn't accept PRs as this is a hobby project that I enjoy working on i
 
 | Platform    | Download |
 | ----------- | -------- |
-| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9PNQ2NFSQ7XW) (recommended — installs and updates automatically)<br>[.exe / .msix](https://github.com/esoltys/luminous/releases/latest) (manual/sideloaded install) |
-| **Linux**   | [.deb / .rpm / Flatpak](https://github.com/esoltys/luminous/releases/latest) for your distro |
+| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9PNQ2NFSQ7XW) (recommended — installs and updates automatically)<br>[.exe / .msix](https://github.com/esoltys/luminous/releases/latest) (manual/sideloaded install)<br>[Portable .zip](https://github.com/esoltys/luminous/releases/latest) (no install; keeps your library and settings in a `data` folder beside the app) |
+| **Linux**   | [.deb / .rpm / Flatpak](https://github.com/esoltys/luminous/releases/latest) for your distro<br>[AppImage](https://github.com/esoltys/luminous/releases/latest) (runs on any distro; add an empty `portable` file beside it for portable mode) |
 
-## Upcoming 3.0 Release
+## New in 3.0 Release
 
 - **Ten UI locales**: English (CA/US/UK), French (CA/FR), Spanish, German, Italian, Russian and Ukrainian
 - **Cosmetic add-on themes**, including the free Mothman theme on the Microsoft Store

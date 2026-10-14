@@ -112,10 +112,8 @@ manual.
 ## Post-build
 
 - [ ] Edit the draft GitHub release: replace the auto-generated body with the contents of
-      `docs/release-notes/vX.Y.Z.md`. Before publishing, toggle "Create a discussion for
-      this release" so it also posts as an Announcement in GitHub Discussions, then
-      publish it (the workflow creates it as a draft with `prerelease: false`, so it's
-      just sitting there until published).
+      `docs/release-notes/vX.Y.Z.md`, then publish it (the workflow creates it as a
+      draft with `prerelease: false`, so it's just sitting there until published).
 - [ ] Microsoft Store submission is a separate, manual step in the private
       `esoltys/luminous-store` repo (not part of this repo's pipeline). After publishing,
       trigger it there:

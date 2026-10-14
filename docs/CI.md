@@ -86,8 +86,7 @@ bundles (and MSIX) attached. It is not visible to end users yet.
 ### 2. Manual: publishing the draft release
 
 Per `RELEASE_CHECKLIST.md`, a human edits the draft release body (replacing the
-auto-generated notes with `docs/release-notes/vX.Y.Z.md`), optionally enables "Create a
-discussion for this release," and clicks **Publish**. This is a manual GitHub UI action —
+auto-generated notes with `docs/release-notes/vX.Y.Z.md`) and clicks **Publish**. This is a manual GitHub UI action —
 no workflow does it automatically.
 
 ### 3. Manual (separate repo): Microsoft Store submission

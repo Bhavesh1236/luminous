@@ -14,8 +14,12 @@ on:
         description: 'Only rebuild the Linux installers (AppImage, .deb, .rpm) and replace them, and their latest.json entries, in the release (e.g. to rebuild an already-published release on the current Linux runner). Skips Windows and Flatpak.'
         type: boolean
         default: false
+      dry_run:
+        description: 'Build the Linux installers only and attach them to this workflow run as an artifact, without touching any release (to test a build before a linux_only run). Skips Windows and Flatpak.'
+        type: boolean
+        default: false
       tag:
-        description: 'Release tag to build, e.g. v3.0.0; its source is checked out. Defaults to the version in package.json.'
+        description: 'Release tag to build, e.g. v3.0.0; its source is checked out. Defaults to the version in package.json (and, without linux_only, to the dispatching branch''s source).'
         type: string
         default: ''
 
@@ -64,6 +68,7 @@ jobs:
       # manifests — this bit us in v0.99.2).
       - name: Create or reuse draft release
         id: release
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -93,19 +98,22 @@ jobs:
         # needed 2.39, so v3.0.0 didn't start on Ubuntu 22.04 / Debian 12 or
         # in the AppImage catalog's test (#1700). Don't bump it for a newer
         # WebKitGTK; the guard below fails the build if the floor rises.
-        platform: ${{ fromJSON(inputs.linux_only && '["ubuntu-22.04"]' || '["ubuntu-22.04", "windows-latest"]') }}
+        platform: ${{ fromJSON((inputs.linux_only || inputs.dry_run) && '["ubuntu-22.04"]' || '["ubuntu-22.04", "windows-latest"]') }}
 
     runs-on: ${{ matrix.platform }}
     env:
       MUSICBRAINZ_CLIENT_ID: ${{ secrets.MUSICBRAINZ_CLIENT_ID }}
       MUSICBRAINZ_CLIENT_SECRET: ${{ secrets.MUSICBRAINZ_CLIENT_SECRET }}
     steps:
-      # Build the release's tag, not the dispatching branch, so a manual
-      # re-run doesn't ship newer code under an older version.
+      # A linux_only re-run (or any run given a tag) builds that tag, not
+      # the dispatching branch, so it doesn't ship newer code under an older
+      # version. Otherwise the event's own ref: on a tag push that's the tag,
+      # and a full dispatch for a new version has no tag yet (a draft
+      # release doesn't create it).
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ needs.create-release.outputs.tag }}
+          ref: ${{ inputs.tag || (inputs.linux_only && needs.create-release.outputs.tag) || '' }}
 
       # Caches ~/.cargo/registry, ~/.cargo/git and the workspace target/ dir
       # (keyed on Cargo.lock + rustc version), so the Windows leg's two full
@@ -154,9 +162,10 @@ jobs:
           action: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
           attempt_limit: 3
           attempt_delay: 15000
+          # Without releaseId/tagName (dry_run), tauri-action only builds.
           with: |
-            releaseId: ${{ needs.create-release.outputs.release_id }}
-            tagName: ${{ needs.create-release.outputs.tag }}
+            releaseId: ${{ !inputs.dry_run && needs.create-release.outputs.release_id || '' }}
+            tagName: ${{ !inputs.dry_run && needs.create-release.outputs.tag || '' }}
             releaseDraft: ${{ needs.create-release.outputs.draft }}
             prerelease: false
 
@@ -179,6 +188,17 @@ jobs:
           APPIMAGES=(target/release/bundle/appimage/*.AppImage)
           [ ${#APPIMAGES[@]} -eq 1 ] || { echo "::error::expected one AppImage, found: ${APPIMAGES[*]}"; exit 1; }
           bash workflow-src/scripts/check-glibc-floor.sh "${APPIMAGES[0]}" 2.35
+
+      - name: Attach Linux installers to the run (dry_run)
+        if: runner.os == 'Linux' && inputs.dry_run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-installers
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
 
       # tauri:windows:build runs tauri-windows-bundle with `--runner bun`, so it
       # uses the @tauri-apps/cli that bun.lock pins, the same CLI as every other
@@ -230,7 +250,7 @@ jobs:
 
   flatpak-build:
     needs: create-release
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.linux_only)
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.linux_only && !inputs.dry_run)
     permissions:
       contents: write
     runs-on: ubuntu-24.04

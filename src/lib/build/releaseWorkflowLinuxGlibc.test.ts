@@ -31,17 +31,28 @@ describe("release.yml: Linux glibc floor", () => {
   });
 });
 
-describe("release.yml: linux_only re-run", () => {
-  it("builds the release's tag rather than the dispatching branch", () => {
-    expect(workflow).toMatch(/ref:\s*\$\{\{\s*needs\.create-release\.outputs\.tag\s*\}\}/);
+describe("release.yml: linux_only and dry_run re-runs", () => {
+  it("a linux_only run builds the release's tag; other runs keep the event's ref", () => {
+    // A full dispatch for a new version has no git tag yet (a draft release
+    // doesn't create one), so only a linux_only run or an explicit tag may
+    // pin the checkout to it.
+    expect(workflow).toMatch(
+      /ref:\s*\$\{\{\s*inputs\.tag \|\| \(inputs\.linux_only && needs\.create-release\.outputs\.tag\) \|\| ''\s*\}\}/
+    );
   });
 
-  it("drops the Windows leg and the Flatpak job", () => {
-    expect(workflow).toMatch(/inputs\.linux_only && '\["ubuntu-22\.04"\]'/);
-    expect(workflow).toMatch(/flatpak-build:[\s\S]*?if:[^\n]*!inputs\.linux_only/);
+  it("drop the Windows leg and the Flatpak job", () => {
+    expect(workflow).toMatch(/\(inputs\.linux_only \|\| inputs\.dry_run\) && '\["ubuntu-22\.04"\]'/);
+    expect(workflow).toMatch(/flatpak-build:[\s\S]*?if:[^\n]*!inputs\.linux_only && !inputs\.dry_run/);
   });
 
-  it("refuses to create a new release", () => {
+  it("linux_only refuses to create a new release", () => {
     expect(workflow).toMatch(/inputs\.linux_only \}\}" == "true" \]\]; then\s+echo "::error::/);
+  });
+
+  it("dry_run creates no release and gives tauri-action nothing to upload to", () => {
+    expect(workflow).toMatch(/name: Create or reuse draft release\s+id: release\s+if: \$\{\{ !inputs\.dry_run \}\}/);
+    expect(workflow).toMatch(/releaseId: \$\{\{ !inputs\.dry_run && needs\.create-release\.outputs\.release_id \|\| '' \}\}/);
+    expect(workflow).toMatch(/tagName: \$\{\{ !inputs\.dry_run && needs\.create-release\.outputs\.tag \|\| '' \}\}/);
   });
 });

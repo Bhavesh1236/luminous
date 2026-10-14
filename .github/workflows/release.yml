@@ -10,6 +10,14 @@ on:
         description: 'Skip the Windows/Linux installer rebuild and only run the Flatpak build/publish job (for re-testing Flatpak packaging against an already-published release without touching its existing assets)'
         type: boolean
         default: false
+      linux_only:
+        description: 'Only rebuild the Linux installers (AppImage, .deb, .rpm) and replace them, and their latest.json entries, in the release (e.g. to rebuild an already-published release on the current Linux runner). Skips Windows and Flatpak.'
+        type: boolean
+        default: false
+      tag:
+        description: 'Release tag to build, e.g. v3.0.0; its source is checked out. Defaults to the version in package.json.'
+        type: string
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -37,9 +45,13 @@ jobs:
       - name: Determine Release Tag
         id: tag
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "${INPUT_TAG}" ]]; then
+            TAG="${INPUT_TAG}"
           else
             VERSION=$(node -p "require('./package.json').version")
             TAG="v${VERSION}"
@@ -58,6 +70,9 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
           if ID=$(gh release view "$TAG" --json id -q .id 2>/dev/null); then
             echo "Found existing release $ID for $TAG"
+          elif [[ "${{ inputs.linux_only }}" == "true" ]]; then
+            echo "::error::linux_only replaces the Linux assets of an existing release, but there is no release for $TAG"
+            exit 1
           else
             gh release create "$TAG" --draft --title "Luminous $TAG" --notes "Release of Luminous $TAG."
             ID=$(gh release view "$TAG" --json id -q .id)
@@ -73,22 +88,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu-24.04, windows-latest]
+        # The Linux leg stays on the oldest Ubuntu we support: the AppImage
+        # (and .deb/.rpm) need the build host's glibc, and a 24.04 build
+        # needed 2.39, so v3.0.0 didn't start on Ubuntu 22.04 / Debian 12 or
+        # in the AppImage catalog's test (#1700). Don't bump it for a newer
+        # WebKitGTK; the guard below fails the build if the floor rises.
+        platform: ${{ fromJSON(inputs.linux_only && '["ubuntu-22.04"]' || '["ubuntu-22.04", "windows-latest"]') }}
 
     runs-on: ${{ matrix.platform }}
     env:
       MUSICBRAINZ_CLIENT_ID: ${{ secrets.MUSICBRAINZ_CLIENT_ID }}
       MUSICBRAINZ_CLIENT_SECRET: ${{ secrets.MUSICBRAINZ_CLIENT_SECRET }}
     steps:
+      # Build the release's tag, not the dispatching branch, so a manual
+      # re-run doesn't ship newer code under an older version.
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.create-release.outputs.tag }}
 
       # Caches ~/.cargo/registry, ~/.cargo/git and the workspace target/ dir
       # (keyed on Cargo.lock + rustc version), so the Windows leg's two full
       # release compiles (NSIS build, then MSIX build) don't each start from
-      # scratch on every run.
+      # scratch on every run. Keyed on the runner image too: objects compiled
+      # against a newer glibc's headers would otherwise be reused and raise
+      # the AppImage's glibc floor again.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -99,7 +127,7 @@ jobs:
         run: bun install
 
       - name: Install system dependencies (Linux)
-        if: matrix.platform == 'ubuntu-24.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libasound2-dev libssl-dev pkg-config libayatana-appindicator3-dev librsvg2-dev
@@ -131,6 +159,26 @@ jobs:
             tagName: ${{ needs.create-release.outputs.tag }}
             releaseDraft: ${{ needs.create-release.outputs.draft }}
             prerelease: false
+
+      # Runs after tauri-action has uploaded (it builds and uploads in one
+      # step), so on a tag push it fails the run while the release is still a
+      # draft. The script comes from the workflow's own commit, since an
+      # older tag checked out above may not have it.
+      - name: Checkout the glibc check script (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: workflow-src
+          sparse-checkout: scripts/check-glibc-floor.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check the AppImage's glibc floor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          shopt -s nullglob
+          APPIMAGES=(target/release/bundle/appimage/*.AppImage)
+          [ ${#APPIMAGES[@]} -eq 1 ] || { echo "::error::expected one AppImage, found: ${APPIMAGES[*]}"; exit 1; }
+          bash workflow-src/scripts/check-glibc-floor.sh "${APPIMAGES[0]}" 2.35
 
       # tauri:windows:build runs tauri-windows-bundle with `--runner bun`, so it
       # uses the @tauri-apps/cli that bun.lock pins, the same CLI as every other
@@ -182,7 +230,7 @@ jobs:
 
   flatpak-build:
     needs: create-release
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.linux_only)
     permissions:
       contents: write
     runs-on: ubuntu-24.04

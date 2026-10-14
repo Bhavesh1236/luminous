@@ -1,10 +1,10 @@
 ## 💬 General Support & Questions
 
-If you have questions about how to use Luminous, configuration help, or general ideas, **please use GitHub Discussions instead of opening an issue**.
+If you have questions about how to use Luminous, configuration help, or general ideas, **please ask on the Luminous subreddit instead of opening an issue**.
 
-* 💬 [GitHub Discussions](https://github.com/esoltys/luminous/discussions)
+* 💬 [r/LuminousMusicPlayer](https://www.reddit.com/r/LuminousMusicPlayer/)
 
-If it's vague "How about a...?" or "I don't know..." then use discussions. If your bug or feature request is clearly defined then continue below:
+If it's vague "How about a...?" or "I don't know..." then ask on Reddit. If your bug or feature request is clearly defined then continue below:
 
 ---
 

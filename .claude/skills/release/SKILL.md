@@ -60,8 +60,7 @@ needs updating to match. Work through it in order:
    --exit-status` until **every** job concludes — both platform legs and `flatpak-build` — and
    report back on the signed Linux + Windows bundles and the `.flatpak`.
 9. **Post-build**: help edit the draft GitHub release body in from `docs/release-notes/vX.Y.Z.md`,
-   remind the user to toggle "Create a discussion for this release" before publishing, and walk
-   through (don't run unprompted):
+   leave publishing it to the user, and walk through (don't run unprompted):
    - the Microsoft Store submission, which lives in the separate private `esoltys/luminous-store`
      repo (`gh workflow run publish-store.yml -f tag=vX.Y.Z` there, plus
      `-f update_screenshots=true` if the listing prep changed anything), then its certification

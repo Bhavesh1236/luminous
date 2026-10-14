@@ -1,12 +1,12 @@
 import { defineScene } from "./types";
 
-const tall = (height: number) => ({ width: 1280, height });
+const tall = (height: number) => ({ width: 1440, height });
 
 export const settingsScenes = [
   defineScene({ name: "settings-general", file: "settings-general.png", view: { tab: "settings", settings: "general" } }),
   defineScene({ name: "settings-system", file: "settings-system.png", view: { tab: "settings", settings: "system" }, viewport: tall(1100) }),
   defineScene({ name: "settings-folders", file: "settings-folders.png", view: { tab: "settings", settings: "sources" }, viewport: tall(1100) }),
-  defineScene({ name: "settings-integrations", file: "settings-integrations.png", view: { tab: "settings", settings: "integrations" }, viewport: tall(850) }),
+  defineScene({ name: "settings-integrations", file: "settings-integrations.png", view: { tab: "settings", settings: "integrations" }, viewport: tall(1250), online: true }),
   defineScene({ name: "settings-about", file: "settings-about.png", view: { tab: "settings", settings: "about" }, viewport: tall(950) }),
   defineScene({
     name: "themes",
@@ -20,7 +20,10 @@ export const settingsScenes = [
     view: { tab: "settings", settings: "equalizer" },
     viewport: tall(1500),
     position: 79,
-    run: async ({ api }) => api.screens.setEqualizerMode("graphic10"),
+    run: async ({ api }) => {
+      await api.screens.setEqualizerMode("graphic10");
+      await api.screens.selectEqualizerPreset("Pop"); // a real curve, not "Flat"
+    },
   }),
   defineScene({
     name: "equalizer-parametric",

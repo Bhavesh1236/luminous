@@ -52,9 +52,11 @@ describe("release.yml: platform matrix can't race to create the draft release", 
   });
 
   it("each matrix leg passes the pre-created releaseId/tagName into tauri-action instead of letting it discover/create the draft", () => {
+    // A dry_run passes neither (so tauri-action only builds); otherwise both
+    // come from create-release.
     const release = extractJobBlock(workflow, "release");
-    expect(release).toMatch(/releaseId:\s*\$\{\{\s*needs\.create-release\.outputs\.release_id\s*\}\}/);
-    expect(release).toMatch(/tagName:\s*\$\{\{\s*needs\.create-release\.outputs\.tag\s*\}\}/);
+    expect(release).toMatch(/releaseId:\s*\$\{\{\s*(!inputs\.dry_run && )?needs\.create-release\.outputs\.release_id( \|\| '')?\s*\}\}/);
+    expect(release).toMatch(/tagName:\s*\$\{\{\s*(!inputs\.dry_run && )?needs\.create-release\.outputs\.tag( \|\| '')?\s*\}\}/);
   });
 });
 

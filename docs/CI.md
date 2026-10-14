@@ -70,7 +70,10 @@ release was published, so the trigger was removed.)
   `package.json` version for manual dispatch), then creates a **draft** GitHub release for
   that tag via `gh release create ... --draft` (or reuses one if it already exists). This
   runs once, up front, so the matrix build below doesn't race to create duplicate drafts.
-- **`release` job** (matrix: `ubuntu-24.04`, `windows-latest`), depends on `create-release`:
+- **`release` job** (matrix: `ubuntu-22.04`, `windows-latest`), depends on `create-release`:
+  - The Linux leg stays on the oldest Ubuntu we support, since
+    the AppImage/`.deb`/`.rpm` need the build host's glibc (#1700); after the build,
+    `scripts/check-glibc-floor.sh` fails it if the AppImage needs glibc newer than 2.35.
   - Installs deps with `bun install`, plus Linux system deps (webkit2gtk, ALSA, OpenSSL,
     appindicator, librsvg) on the Ubuntu leg.
   - Runs `tauri-apps/tauri-action@v0` (wrapped in `Wandalen/wretry.action@v3` for retry
@@ -82,6 +85,20 @@ release was published, so the trigger was removed.)
 
 At the end of this workflow, the GitHub release exists as a **draft** with Linux + Windows
 bundles (and MSIX) attached. It is not visible to end users yet.
+
+Manual re-runs of an existing release: `-f flatpak_only=true` rebuilds only the Flatpak, and
+`-f linux_only=true -f tag=vX.Y.Z` rebuilds only the AppImage/`.deb`/`.rpm` from that tag and
+replaces them and their `latest.json` entries, leaving the Windows assets and Flatpak alone.
+Test the build first with `-f dry_run=true`, which attaches the Linux installers to the run as
+an artifact and touches no release:
+
+```bash
+gh workflow run release.yml -f dry_run=true -f tag=vX.Y.Z
+```
+
+```bash
+gh workflow run release.yml -f linux_only=true -f tag=vX.Y.Z
+```
 
 ### 2. Manual: publishing the draft release
 

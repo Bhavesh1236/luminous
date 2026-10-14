@@ -98,6 +98,7 @@ Docs and Store screenshots are scenes in `scripts/scenes/` run against the real 
 - `bun run take-scene-screenshots --clone-profile` skips the scan and shows your real stats, pins and playlists; plays and setting changes stay in the copy.
 - `--name=a,b`, `--locale=<tag>`, `--scheme=light|dark` narrow a run; one scene in one locale takes seconds once the app is up.
 - A scene is data (`view`, `theme`, `layout`, `viewport`, `position`, `featured`) plus an optional `run`/`cleanup` that calls the scripting API. Component-local states are reached through `screens` hooks registered by the component itself under `import.meta.env.DEV`.
+- Scenes named `store-*` (`scripts/scenes/store.ts`) exist only for the Microsoft Store listing, which takes them with the guide's dark captures; the guides don't reference them. The private `luminous-store` repo composites the listing images from them with `New-StoreScreenshots.ps1` (see `docs/RELEASE_CHECKLIST.md`).
 - The viewport is set by CDP device-metrics override, not by resizing the real window, so output is the exact requested size. A screen recording of the real window needs a real resize.
 
 ## Testing against a local WebDAV server

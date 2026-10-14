@@ -51,7 +51,9 @@ describe("release.yml: linux_only and dry_run re-runs", () => {
   });
 
   it("dry_run creates no release and gives tauri-action nothing to upload to", () => {
-    expect(workflow).toMatch(/name: Create or reuse draft release\s+id: release\s+if: \$\{\{ !inputs\.dry_run \}\}/);
+    // ...but still outputs a draft state: tauri-action rejects an empty
+    // releaseDraft even when it uploads nothing.
+    expect(workflow).toMatch(/inputs\.dry_run \}\}" == "true" \]\]; then\s+echo "draft=true" >> "\$GITHUB_OUTPUT"\s+exit 0/);
     expect(workflow).toMatch(/releaseId: \$\{\{ !inputs\.dry_run && needs\.create-release\.outputs\.release_id \|\| '' \}\}/);
     expect(workflow).toMatch(/tagName: \$\{\{ !inputs\.dry_run && needs\.create-release\.outputs\.tag \|\| '' \}\}/);
   });

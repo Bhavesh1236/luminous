@@ -1,4 +1,4 @@
-// Mirrors `src-tauri/src/equalizer.rs`. The backend clamps every value and
+// Mirrors `crates/luminous-equalizer/src/lib.rs`. The backend clamps every value and
 // echoes the canonical config; `EqRanges` carries the bounds it clamps to.
 
 export type EqMode = "graphic10" | "parametric";
@@ -58,7 +58,7 @@ export interface EqRanges {
 
 /** Why `import_parametric_profile` / `read_eq_profile_file` refused a profile
  * (#1336). Crosses IPC as a JSON string; preset-store failures reuse the
- * `eq_presets` codes. Lines are 1-based. */
+ * `eq_store` codes. Lines are 1-based. */
 export type EqImportError =
   | { code: "empty" }
   | { code: "too_many_filters"; count: number; max: number }
